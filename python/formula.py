@@ -47,6 +47,11 @@ class Struct:
             if struct.symbol.is_var:
                 yield struct
 
+    def symbols(self):
+        yield self.symbol
+        for arg in self.args:
+            yield from arg.symbols()
+
 
 class Term(Struct): #
     """ A term built using variables and function symbols
@@ -61,6 +66,11 @@ class Term(Struct): #
     def __str__(self):
         return self.tex()
 
+    def terms(self):
+        yield self
+        for arg in self.args:
+            yield from arg.terms()
+
     def tex(self):
         if self.symbol.infix: # binary, already checked
             return self.name().join([arg.tex() for arg in self.args])
@@ -71,13 +81,29 @@ class Term(Struct): #
 
 class Formula(object):
     """ Any FOL wff """
-    def __init__(self):
-        pass
-        # Nothing here
+    # def __init__(self):
+    #     pass
+    #     # Nothing here
 
     def free_vars(self): # will this work?
         # all vars which are not in nonfree_vars
         yield from [v for v in self.vars() if v not in self.nonfree_vars()]
+        # this works, which is pretty cool, since the methods invoked
+        # here exist only in subclasses of Formula
+
+    def is_sentence(self):
+        return not [v for v in self.free_vars()]
+
+    def describe(self):
+        if self.is_sentence():
+            print("I am a sentence {}".format(self.tex()))
+        else:
+            print("I am an open formula {}".format(self.tex()))
+        print("  My variables: {}".format(", ".join([v.tex() for v in self.vars()])))
+        print("  My non-free variables: {}".format(", ".join([v.tex() for v in self.nonfree_vars()])))
+        print("  My free variables: {}".format(", ".join([v.tex() for v in self.free_vars()])))
+
+
 
 class Atom(Formula, Struct):
     """ Atomic formula """
@@ -85,7 +111,7 @@ class Atom(Formula, Struct):
         Formula.__init__(self)
         Struct.__init__(self, symbol, *args)
 
-        if symbol.type != "predicate":
+        if symbol.sort is not None:
             raise TypeError("Cannot make an atom out of {}".format(str(symbol)))
 
     # Having free_vars and non_free vars requires duplication of logic
@@ -98,6 +124,10 @@ class Atom(Formula, Struct):
     def nonfree_vars(self): # generator
         return # It's an atom
         yield
+
+    def terms(self):
+        for arg in self.args:
+            yield from arg.terms
 
     def tex(self):
         if len(self.args) > 0:
@@ -116,6 +146,12 @@ class Neg(Formula): # negation
 
     def nonfree_vars(self): # generator
         yield from self.formula.nonfree_vars()
+
+    def symbols(self):
+        yield from self.formula.symbols()
+
+    def terms(self):
+        yield from self.formula.terms()
 
     def tex(self):
         if isinstance(self.formula, Junction):
@@ -139,6 +175,14 @@ class Junction(Formula):
         for f in self.formulas:
             yield from f.nonfree_vars()
 
+    def symbols(self):
+        for f in self.formulas:
+            yield from f.symbols()
+
+    def terms(self):
+        for f in self.formulas:
+            yield from f.terms()
+
     def tex(self, connective):
         joiner = " \\{} ".format(connective)
         return joiner.join([f.tex() for f in self.formulas])
@@ -152,11 +196,6 @@ class And(Junction):
         Junction.__init__(self, *formulas)
 
     def tex(self):
-        #return Junction.tex(self, "land")
-
-        # If one of the formulas is a disjunction, encase it brackets,
-        # pass others as is. Then join.
-
         texes = ["({})".format(f.tex()) if isinstance(f, Or) else f.tex() for f in self.formulas]
         return " \\land ".join(texes)
 
@@ -165,10 +204,30 @@ class Or(Junction):
         Junction.__init__(self, *formulas)
 
     def tex(self):
-        #return Junction.tex(self, "lor")
-
         texes = ["({})".format(f.tex()) if isinstance(f, And) else f.tex() for f in self.formulas]
         return " \\lor ".join(texes)
+
+class Implies(Junction):
+    def __init__(self, *formulas):
+        if len(formulas) != 2:
+            raise Exception("Implication must be binary!")
+        Junction.__init__(self, *formulas)
+
+    def tex(self):
+        tex1 = "({})".format(self.formulas[0].tex()) if isinstance(self.formulas[0], Junction) else self.formulas[0].tex()
+        tex2 = "({})".format(self.formulas[1].tex()) if isinstance(self.formulas[0], Junction) else self.formulas[1].tex()
+        return "{} \\to {}".join(tex1, tex2)
+
+class Iff(Junction):
+    def __init__(self, *formulas):
+        if len(formulas) != 2:
+            raise Exception("Bidirectional implication must be binary!")
+        Junction.__init__(self, *formulas)
+
+    def tex(self):
+        tex1 = "({})".format(self.formulas[0].tex()) if isinstance(self.formulas[0], Junction) else self.formulas[0].tex()
+        tex2 = "({})".format(self.formulas[1].tex()) if isinstance(self.formulas[0], Junction) else self.formulas[1].tex()
+        return "{} \\liff {}".format(tex1, tex2)
 
 class Quantified(Formula):
     """ <quantifier> var (formula) """
@@ -194,6 +253,13 @@ class Quantified(Formula):
         yield self.var
         yield from self.formula.nonfree_vars()
 
+    def symbols(self):
+        yield self.var.symbol
+        yield from self.formula.symbols()
+
+    def terms(self):
+        yield from self.formula.terms()
+
     def tex(self, quantifier):
         template = "\\{} {} {}"
         if isinstance(self.formula, Junction):
@@ -215,3 +281,31 @@ class Exists(Quantified):
 
     def tex(self):
         return Quantified.tex(self, "exists")
+
+class RelSSA(Formula):
+    """ Succcessor state axiom for a relational fluent
+        Custom-form FOL formula for Basic Action Theories
+    """
+    def __init__(self, symbol):
+        """ lhs = atom based on rel. fluent symbol with obj and sit variables as arguments
+            rhs = disjunciton of effect and frame
+            effect = disjunction of formulas 'a=namedaction(vars) and context_condition'
+
+        """
+        pass
+        self.legal = False
+        # Note to self: it will be better to hide construction complexity inside of this class
+        # get as inputs only the necessary stuff and build the axiom incrementally
+        # add quantifiers automatically, based on the fluent symbol
+        # I.e., knowing fluent symbol already allows us to build the axiom using standard variables:
+        # F(x1, x2, do(a,s)) \liff F(x1, x2, s)
+        # Then, use add methods to add positive and negative effects
+
+    def add_pos_effect(self, action, context):
+        pass
+
+    def add_neg_effect(self, action, context):
+        pass
+
+# Likewise, need to define FuncSSA and APA
+# May leave APA for later, as it's not needed for regression

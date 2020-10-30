@@ -61,7 +61,7 @@ class FormulaBuilding(unittest.TestCase):
         print(f2.tex())
 
         f3 = Neg(f2)
-        self.display(f3)
+        f3.describe()
 
         # Quantification - resume after tested simpler formulas
 
@@ -69,120 +69,65 @@ class FormulaBuilding(unittest.TestCase):
             f1 = Forall(term_S_0, a2)
 
         f1 = Forall(term_t, a2)
-        self.display(f1)
+        f1.describe()
 
         with self.assertRaises(Exception):
             f1 = Forall(term_t, f1)
 
         f1 = Exists(term_s, f1)
-        self.display(f1)
+        f1.describe()
 
         sym_y = Symbol("y", sort="object", is_var=True)
 
         f4 = Forall(Term(sym_y), f2)
-        self.display(f4)
+        f4.describe()
 
         f5 = Forall(term_x, Forall(term_t, Forall(term_s, f4)))
-        self.display(f5)
+        f5.describe()
+
+        # Let's create a successor state axoim!
+        # Relational:
+        # ()\forall x, a, s) F(x, do(a,s)) \liff \gamma^+(x, a, s) \lor (F(x,s) \land \neg \gamma^-(x,a,s))
 
 
-    def display(self, formula):
-        print("-----formula {}-----".format(formula.tex()))
-        #print("  Symbols in  {}".format(formula.tex()))
-        #for sym in formula.iter_symbols():
-        #    print("    {}".format(str(sym)))
 
-        #print("  Structs in  {}".format(formula.tex()))
-        #for struct in formula.iter_structs():
-        #    print("    {}".format(struct.tex()))
 
-        print("  All variables:")
-        for v in formula.vars():
-            print("  {}".format(v.tex()))
 
-        print("  Non-free variables:")
-        for v in formula.nonfree_vars():
-            print("  {}".format(v.tex()))
+    def test_theory(self):
+        theory = Theory("test", sorts=["action", "situation"])
 
-        print("  Free variables:")
-        for v in formula.free_vars():
-            print("  {}".format(v.tex()))
+        sym_x = Symbol("x", sort="object", is_var=True)
+        sym_a = Symbol("a", sort="action", is_var=True)
+        sym_s = Symbol("s", sort="situation", is_var=True)
+        sym_F = Symbol("F", sorts=["object", "situation"])
+        sym_do = Symbol("do", sort="situation", sorts=["action", "situation"])
+        sym_gammaP = Symbol("\\gamma^+", sorts=["object", "action", "situation"])
+        sym_gammaN = Symbol("\\gamma^-", sorts=["object", "action", "situation"])
+
+        lhs = Atom(sym_F, Term(sym_x), Term(sym_do, Term(sym_a), Term(sym_s)))
+
+        effect = Atom(sym_gammaP, Term(sym_x), Term(sym_a), Term(sym_s))
+        frame = And(Atom(sym_F, Term(sym_x), Term(sym_s)), Neg(Atom(sym_gammaN, Term(sym_x), Term(sym_a), Term(sym_s))))
+        rhs = Or(effect, frame)
+
+        iff = Iff(lhs, rhs)
+        ssa = Forall(Term(sym_x), Forall(Term(sym_a), Forall(Term(sym_s), iff)))
+        ssa.describe()
+
+        theory.print_vocabulary()
+
+        with self.assertRaises(Exception): # because ssa contains new symbols
+            theory.add_axiom(ssa)
+
+        with self.assertRaises(Exception):
+            theory.add_axiom(iff, force=True) # because iff is an open formula
+
+        theory.add_axiom(ssa, force=True)
+
+        with self.assertRaises(Exception): # cannot add same axiom twice
+            theory.add_axiom(ssa, force=True)
+
+        theory.print_vocabulary()
 
 if __name__ == '__main__':
     unittest.main()
-
-
-
-#s_pred = Symbol('P', sorts=["object", "time", "situation"])
-#s_obj = Symbol('c', type="function", sorts=[], sort="object")
-#s_time = Symbol('t', type="variable", sort="time")
-#symbols = [s_pred, s_obj, s_time]
-#s = Symbol('P')
-#a = Atom(args=[s_obj, s_time])
-
-#print("Symbols: {}".format(", ".join([str(s) for s in symbols])))
-
-
-# What do I even want?
-# Create FOL and SOL formulas and regress them
-# Desirable: invoke prolog and ODE solver to actually compute answers
-# Something like:
-# # Define vocabulary (all symbols used):
-# # Idea: don't define variables; just assume an undefined symbol is a variable; infer sort from usage
-# theory = Theory("test")
-#
-#
-# h = Symbol("h", sorts=["object", "time", "situation"], sort="reals") # Inferred to be a temp fluent
-# c = Symbol("C", sorts=["object", "situation"]) # Context predicate
-# p = Symbol("P", sorts=["object"])
-# x = Symbol("x", sort="object", is_var=True)
-# do = Symbol("do", sorts=["action","situation"], sort="situation")
-# s_0 = Symbol("S_0", sort="situation")
-# a_noop = Symbol("sleep", sorts=["time"], sort="action")
-# tau = Symbol("\\tau", sort="time")
-# sigma = Symbol("\\sigma", sort="situation")
-# s = Symbol("s", sort="situation", is_var=True)
-#
-#
-# theory.add_symbol(h)
-# theory.add_symbol(c)
-# theory.add_symbol(x)
-# theory.add_symbol(p)
-#
-# theory.print_vocabulary()
-#
-# sitterm = Term(do, Term(a_noop, Term(tau)), Term(s_0))
-# term = Term(h, Term(x), Term(tau), sitterm)
-# print("h(x,\\tau, do(sleep(\\tau), S_0)) -> ", term.tex())
-#
-# c_atom = Atom(c, Term(x), sitterm)
-# print("C(x, ...) -> ", c_atom.tex(), ", has free x: ", c_atom.has_free(Term(x)))
-#
-# allxc = Forall(Term(x), c_atom)
-# print("\\forall x (C(...)) -> ", allxc.tex(), ", has free x: ", allxc.has_free(Term(x)), ", has free s: ", c_atom.has_free(Term(s)))
-#
-# AsExC = Forall(Term(x), Exists(Term(s), Neg(Atom(c, Term(x), Term(s)))))
-# print("\\forall x \\exists s (C(x,s)) -> ", AsExC.tex(), ", has free x: ", AsExC.has_free(Term(x)), ", has free s: ", AsExC.has_free(Term(s)))
-#
-# disj = Or(Atom(p, Term(x)), Neg(Exists(Term(x), Atom(c, Term(x), Term(s)))))
-# print(str(disj))
-# print("P(x) \\lor \\neg (C(x,s)) -> ", disj.tex(), ", has free x: ", disj.has_free(Term(x)), ", has free s: ", disj.has_free(Term(s)))
-#
-# print("\nSymbols in disj:")
-# for s in disj.iter_symbols():
-#     print("  ", str(s))
-# # # Build the formula:
-#
-# # y = Var("y", sort="reals")
-# # t = Var("t", sort="time")
-# # s = Var("s", sort="situation")
-# # lhs = Equals(Term(h, [x, t, s]), y)
-# # tca1 = And(Atom(c, [x, s]), Equals(y, tca1math))
-# # tca2 = And(Not(Atom(c, [x,s ])), Equals(y, tca2math))
-# # rhs = Or(tca1, tca2)
-# # iff = Iff(lhs, rhs)
-# # sea = Forall(x, Forall(y, Forall(t, Forall(s, iff))))
-#
-#
-# # for s in [h, c, x]:
-# #     print(str(s), repr(s))

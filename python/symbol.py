@@ -40,3 +40,19 @@ class Symbol:
         if self.name == other.name and self.sorts == other.sorts and self.sort == other.sort and self.is_var == other.is_var and self.infix == other.infix:
             return True
         return False
+
+class RelFluentSymbol(Symbol):
+    """ Must have situation as last arg. sort"""
+    def __init__(self, name, sorts=[]): # sorts don't include sit term at the end
+        if "situation" in sorts:
+            raise Exception("Cannot have a second situation term in a relational fluent")
+        Symbol.__init__(self, name, sorts=sorts+["situation"])
+        self.type = "relational fluent"
+
+class FuncFluentSymbol(Symbol):
+    """ Must have situation as last arg. sort"""
+    def __init__(self, name, sorts=[], sort="reals"): # sorts don't include sit term at the end
+        if "situation" in sorts:
+            raise Exception("Cannot have a second situation term in a relational fluent")
+        Symbol.__init__(self, name, sorts=sorts+["situation"], sort=sort)
+        self.type = "functional fluent"
