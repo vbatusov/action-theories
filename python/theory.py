@@ -1,3 +1,5 @@
+from formula import *
+
 def legal_name(n):
     #if not n.isalpha():
     #    raise Exception("Bad name '{}'".format(n))
@@ -58,6 +60,7 @@ class Theory:
         # anywhere as arguments) is in theory's vocabulary
         if not formula.is_sentence():
             raise Exception("An open formula cannot be an axiom!")
+            # Future: automatically quantify free vars with \forall
 
         if formula in self.axioms[where]:
             raise Exception("Axiom already a part of theory!")
@@ -85,7 +88,16 @@ class BasicActionTheory(Theory):
         \\Sigma, D_{ap}, D_{ss}, D_{una}, D_{S_0} """
     def __init__(self, name):
         Theory.__init__(self, name, sorts=["action", "situation"], subsets=["S_0", "ss", "ap"]) # una and \Sigma are standard
-        # Here, add standard sitcalc symbols to vocab.
+        # Here, add standard sitcalc symbols and terms to vocab.
+        self.vocabulary = {}
+        self.vocabulary["S_0"] = Term(Symbol("S_0", sort="situation"))
+        self.vocabulary["do"] = Symbol("do", sort="situation", sorts=["action", "situation"])
+        self.vocabulary["Poss"] = Symbol("Poss", sorts=["action", "situation"]),
+        self.vocabulary["a"] = Term(Symbol("a", sort="action", is_var=True))
+        self.vocabulary["s"] = Term(Symbol("s", sort="situation", is_var=True))
+        self.vocabulary["Poss"] = Symbol("Poss", sorts=["action", "situation"])
+        self.vocabulary["do(a,s)"] =Term(self.vocabulary["do"], self.vocabulary["a"], self.vocabulary["s"])
+
 
     def add_axiom(self, formula, force=False, where="default"):
         raise Exception("Don't do this. Use specialized methods.")
@@ -103,7 +115,7 @@ class BasicActionTheory(Theory):
 
     def add_ss_axiom(self, formula, force=False):
         # Check if it's a proper ssa
-        if isinstance(formula, RelSSA) or isinstance(formula, FuncSSA):
+        if (isinstance(formula, RelSSA) or isinstance(formula, FuncSSA)) and formula.finalized:
             self.axioms["ss"].add(formula)
         else:
             raise Exception("Not a proper SSA, cannot add to theory")

@@ -1,5 +1,4 @@
 import unittest
-from symbol import Symbol
 from theory import *
 from formula import *
 
@@ -10,6 +9,7 @@ class FormulaBuilding(unittest.TestCase):
     # with self.assertRaises(Exception): ...
 
     def test_symbol_creation(self):
+        print("\n===== TEST SYMBOL CREATION ======")
         # Object constant
         theory = Theory("test")
 
@@ -25,6 +25,7 @@ class FormulaBuilding(unittest.TestCase):
         theory.add_symbol(Symbol("cat", sort="feline"))
 
     def test_formula_creation(self):
+        print("\n===== TEST FORMULA CREATION ======")
         theory = Theory("test")
         sym_P = Symbol("P", sorts=["object", "time", "situation"])
         sym_Q = Symbol("Q", sorts=["time", "situation"])
@@ -58,10 +59,18 @@ class FormulaBuilding(unittest.TestCase):
 
         a3 = Atom(sym_Q, term_t, term_s)
         f2 = And(f1, a3)
-        print(f2.tex())
+        print("Binary conjunction:", f2.tex(), " instance ", f2)
 
         f3 = Neg(f2)
         f3.describe()
+
+        f2 = And(f1)
+        print("Unary conjunction:", f2.tex(), " instance ", f2)
+        f2.describe()
+
+        f2 = And()
+        print("0-ary conjunction:", f2.tex(), " instance ", f2)
+        f2.describe()
 
         # Quantification - resume after tested simpler formulas
 
@@ -94,6 +103,7 @@ class FormulaBuilding(unittest.TestCase):
 
 
     def test_theory(self):
+        print("\n===== TEST THEORY CREATION ======")
         theory = Theory("test", sorts=["action", "situation"])
 
         sym_x = Symbol("x", sort="object", is_var=True)
@@ -128,6 +138,17 @@ class FormulaBuilding(unittest.TestCase):
             theory.add_axiom(ssa, force=True)
 
         theory.print_vocabulary()
+
+    def test_BAT(self):
+        print("\n===== TEST BAT CREATION ======")
+        myBAT = BasicActionTheory("Dear Little BAT")
+        myBAT.print_vocabulary()
+
+        myF = RelFluentSymbol("MyFluent", sorts=["object", "object"])
+        my_x = Term(Symbol("x", sort="object", is_var=True))
+        my_y = Term(Symbol("y", sort="object", is_var=True))
+        myssa = RelSSA(myF, [my_x, my_y], voc=myBAT.vocabulary)
+        myssa.describe()
 
 if __name__ == '__main__':
     unittest.main()
