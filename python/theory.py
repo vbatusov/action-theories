@@ -23,6 +23,7 @@ class Theory:
             self.add_sort(s)
 
         self.vocabulary = {} # Maps symbol_name to Symbol
+
         self.axioms = {"default" : set()} # Sets of Formula objects (no free variables)
         # It's a dict because we want to allow one to categorize axioms into subsets.
         for subset in subsets:

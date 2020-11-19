@@ -79,6 +79,8 @@ class Struct:
         for s_sort, arg in zip(symbol.sorts, args):
             if s_sort != arg.sort:
                 raise Exception("Wrong argument sort. Expecting {}, got {}!".format(s_sort, arg.sort()))
+            if not isinstance(arg, Struct):
+                raise TypeError("Struct argument is not a Struct!!")
 
         self.symbol = symbol
         self.args = list(args)
@@ -120,6 +122,11 @@ class Term(Struct): #
      """
     # Term(Symbol, Term, Term, ...)
     def __init__(self, symbol, *args):
+        for arg in args:
+            if not isinstance(arg, Term):
+                raise TypeError(f"Argument {arg} is not a Term!")
+        if symbol.name == "=":
+            print("***Constructing and equality atom***")
         Struct.__init__(self, symbol, *args)
         self.is_var = symbol.is_var
 
@@ -170,6 +177,13 @@ class Formula(object):
     def is_sentence(self):
         return not [v for v in self.free_vars()]
 
+    def uniform_in(self, term):
+        """ True iff, in self, every term of sort term.sort is term. """
+        for t in self.terms():
+            if t.sort == term.sort and term != t:
+                return False
+        return True
+
     def describe(self):
         if self.is_sentence():
             print("I am a sentence {}".format(self.tex()))
@@ -190,11 +204,14 @@ class Contradiction(Formula):
 class Atom(Formula, Struct):
     """ Atomic formula """
     def __init__(self, symbol, *args): # args must be Terms
-        Formula.__init__(self)
-        Struct.__init__(self, symbol, *args)
-
         if symbol.sort is not None:
             raise TypeError("Cannot make an atom out of {}".format(str(symbol)))
+        for arg in args:
+            if not isinstance(arg, Term):
+                raise TypeError("Atom's arguments must be Terms!")
+
+        Formula.__init__(self)
+        Struct.__init__(self, symbol, *args)
 
     # Having free_vars and non_free vars requires duplication of logic
     # Better define vars and nonfree_vars, and get free_vars by difference
@@ -209,12 +226,31 @@ class Atom(Formula, Struct):
 
     def terms(self):
         for arg in self.args:
-            yield from arg.terms
+            yield from arg.terms()
 
     def tex(self):
         if len(self.args) > 0:
             return "{}({})".format(self.symbol.name, ", ".join([arg.tex() for arg in self.args]))
         return self.symbol.name
+
+class EqAtom(Atom):
+    """ Might have to exclude the = symbol from all theories' vocabularies!
+        Might have to look over all conditions that depend on isinstance(_, Atom)!
+    """
+    def __init__(self, *args):
+        if len(args) != 2:
+            raise TypeError(f"Equality must have two arguments, {len(args)} given.")
+        if args[0].sort != args[1].sort:
+            raise TypeError(f"Cannot equate terms of distinct sorts! {args[0].sort} vs. {args[1].sort}")
+
+        #print(f"Constructing EqAtom using {args[0].tex()} and {args[1].tex()}")
+        #print(f"Sorts: args[0] is {args[0].sort}, args[1] is {args[1].sort}")
+
+        symbol = Symbol("=", sorts=[args[0].sort]*2) # Might have to exclude this from theory's vocabulary
+        Atom.__init__(self, symbol, *args)
+
+    def tex(self):
+        return f"{self.args[0].tex()} \\eq {self.args[1].tex()}"
 
 class Neg(Formula): # negation
     def __init__(self, formula):
@@ -248,7 +284,7 @@ class Neg(Formula): # negation
         yield from self.formula.terms()
 
     def tex(self):
-        if isinstance(self.formula, Junction):
+        if isinstance(self.formula, Junction) or isinstance(self.formula, EqAtom):
             return "\\neg ({})".format(self.formula.tex())
         else:
             return "\\neg {}".format(self.formula.tex())
@@ -427,7 +463,7 @@ class Quantified(Formula):
 
     def tex(self, quantifier):
         template = "\\{} {} {}"
-        if isinstance(self.formula, Junction):
+        if isinstance(self.formula, Junction) or isinstance(self.formula, EqAtom):
             template = "\\{} {} ({})"
         return template.format(quantifier, self.var.tex(), self.formula.tex())
 
@@ -477,33 +513,31 @@ class RelSSA(Formula):
         for v in obj_vars:
             if v.sort != "object":
                 raise TypeError("Fluent object arguments must be of sort object")
+
+        self.a_var = voc['a']
+        self.s_var = voc['s']
         # Create universally quantified variables
         lhs_atom_args = obj_vars + [voc['do(a,s)']]
         rhs_atom_args = obj_vars + [voc['s']]
 
+        self.obj_vars = obj_vars
         self.univ_vars = obj_vars + [voc['a'], voc['s']]
         self.lhs = Atom(symbol, *lhs_atom_args)
         self.frame_atom = Atom(symbol, *rhs_atom_args)
         self.pos_effects = []
         self.neg_effects = []
         self.formula = None # this is just to indicate where the formula can be found
-        self.build_formula() # reconcile bits into one formula
-
-        # Note to self: it will be better to hide construction complexity inside of this class
-        # get as inputs only the necessary stuff and build the axiom incrementally
-        # add quantifiers automatically, based on the fluent symbol
-        # I.e., knowing fluent symbol already allows us to build the axiom using standard variables:
-        # F(x1, x2, do(a,s)) \liff F(x1, x2, s)
-        # Then, use add methods to add positive and negative effects
+        self._build_formula() # reconcile bits into one formula
 
     def simplified(self):
         raise Exception("Not supposed to do this on a SSA")
 
-    def build_formula(self):
+    def _build_formula(self):
         p_eff = Or(*self.pos_effects)
         n_eff = Or(*self.neg_effects)
         frame = And(self.frame_atom, Neg(n_eff))
-        iff = Iff(self.lhs, Or(p_eff, frame))
+        rhs = Or(p_eff, frame)
+        iff = Iff(self.lhs, rhs)
 
         quantified = iff
         for var in reversed(self.univ_vars):
@@ -514,18 +548,45 @@ class RelSSA(Formula):
         if not self.formula.is_sentence():
             raise Exception("Resulting SSA is not a sentence. Perhaps an extra var in effects?")
 
-    def add_pos_effect(self, action, context):
-        """ action: fully instantiated action term with variables among obj_vars (for now) --- update later
+    def _effect_type_check(self, action, context):
+        if not isinstance(action, Term) or action.sort != "action":
+            raise TypeError(f"Bad action term {action.tex()}!")
+        if not isinstance(context, Formula):
+            raise TypeError(f"Bad context formula {context.tex()}!")
+        for a_arg in action.args:
+            if a_arg.sort != "object":
+                raise TypeError(f"Action term {action.tex()} has non-object arguments!")
+
+    def _add_effect(self, action, context, positive=True):
+        """ action: fully instantiated action term with variables among obj_vars
+                (other vars will be existentially quantified, automatically)
             context: arbitrary formula uniform in s with free variables among obj_vars
             (a=action_name(\bar{x}) \land \Phi(\bar{x},s))
         """
+        self._effect_type_check(action, context)
+        eq = EqAtom(self.a_var, action)
+        effect = And(eq, context)
+        # All vars not occurring on LHS will get existentially quantified
+        for v in effect.free_vars():
+            if v not in self.univ_vars:
+                effect = Exists(v, effect)
 
-        pass
-        self.build_formula()
+        effect = effect.simplified()
+        if not effect.uniform_in(self.s_var):
+            raise Exception(f"Effect {effect.tex()} not uniform in s!")
+
+        if positive:
+            self.pos_effects.append(effect)
+        else:
+            self.neg_effects.append(effect)
+        self._build_formula()
+
+    def add_pos_effect(self, action, context):
+        self._add_effect(action, context, positive=True)
+
 
     def add_neg_effect(self, action, context):
-        pass
-        self.build_formula()
+        self._add_effect(action, context, positive=False)
 
     def describe(self):
         self.formula.describe()
