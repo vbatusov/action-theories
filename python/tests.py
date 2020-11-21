@@ -34,6 +34,24 @@ class FormulaBuilding(unittest.TestCase):
         sym_t = Symbol("t", sort="time", is_var=True)
         sym_s = Symbol("s", sort="situation", is_var=True)
 
+        sym_y = Symbol("y", sort="object", is_var=True)
+        sym_f = Symbol("f", sort="object", sorts=["object", "situation"])
+        sym_g = Symbol("g", sort="object", sorts=["time"])
+
+        term_y = Term(sym_y)
+        term_f_x_s = Term(sym_f, Term(sym_x), Term(sym_s))
+        term_g = Term(sym_g, Term(sym_t))
+        print("SUBSTITUTION")
+        print(term_f_x_s.tex())
+        term_f_x_s.replace_term(Term(sym_x), term_y)
+        print(term_f_x_s.tex())
+        term_f_x_s.replace_term(Term(sym_y), term_g)
+        print(term_f_x_s.tex())
+
+        with self.assertRaises(TypeError):
+            term_f_x_s.replace_term(Term(sym_s), term_g)
+            print(term_f_x_s.tex())
+
         term_x = Term(sym_x)
         #print(term_x.tex())
 
@@ -199,6 +217,27 @@ class FormulaBuilding(unittest.TestCase):
         a3_s = Symbol("eat", sort="action", sorts=["object"])
         myssa.add_neg_effect(Term(a3_s, my_y), Atom(Symbol("Day")))
         myssa.describe()
+
+        print("Test substitutions:")
+        with self.assertRaises(Exception):
+            myssa.replace_term(my_x, my_z)
+
+        my_c = Term(Symbol("c", sort="object"))
+        f = myssa.formula
+        print("Before:")
+        f.describe()
+        f.replace_term(my_x, my_c)
+        print("After:")
+        f.describe()
+
+        print("\n Test FUNCTIONAL SSA")
+        height = FuncFluentSymbol("height", sorts=["object"])
+        my_y_reals = Term(Symbol("y", sort="reals", is_var=True))
+        with self.assertRaises(Exception):
+            myfssa2 = FuncSSA(height, obj_vars=[my_y], voc=myBAT.vocabulary) # Should throw an exception TODO
+        myfssa = FuncSSA(height, obj_vars=[my_x], voc=myBAT.vocabulary)
+        myfssa.describe()
+
 
 
 if __name__ == '__main__':
