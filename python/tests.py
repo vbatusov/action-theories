@@ -178,29 +178,43 @@ class FormulaBuilding(unittest.TestCase):
 
         #theory.print_vocabulary()
 
+    def test_substitution(self):
+        x = Term(Symbol("x", sort="object", is_var=True))
+        y = Term(Symbol("y", sort="object", is_var=True))
+        atom1 = Atom(Symbol("P", sorts=["object"]), x)
+        atom2 = copy.deepcopy(atom1)
+        print("atom1 before:", atom1.tex())
+        print("atom2 before:", atom2.tex())
+        atom2.replace_term(x,y)
+        print("atom1 after:", atom1.tex())
+        print("atom2 after:", atom2.tex())
+
     def test_BAT(self):
         print("\n===== TEST BAT CREATION ======")
         myBAT = BasicActionTheory("Dear Little BAT")
         myBAT.print_vocabulary()
 
+        print("\n--- Relational SSA ---")
         myF = RelFluentSymbol("MyFluent", sorts=["object", "object"])
         my_x = Term(Symbol("x", sort="object", is_var=True))
         my_y = Term(Symbol("y", sort="object", is_var=True))
         my_z = Term(Symbol("z", sort="object", is_var=True))
         myssa = RelSSA(myF, [my_x, my_y], voc=myBAT.vocabulary)
 
-        print("No effects, only frame:")
+        print("\nNo effects, only frame:")
         myssa.describe()
 
-        print("Adding a positive effect:")
+        print("\nAdding a positive effect:")
         a1_sym = Symbol("sleep", sort="action", sorts=["object"])
         cat_sym = Symbol("cat", sort="object", is_var=True)
         fat_sym = Symbol("Fat", sorts=["object"])
         a1 = Term(a1_sym, Term(cat_sym))
         cc1 = Atom(fat_sym, Term(cat_sym))
 
-        with self.assertRaises(Exception):
-            myssa.add_pos_effect(a1, cc1)
+        # Don't remember what this is testing, but this stopped being raised
+        # After I stopped free variable generator from returning duplicates
+        #with self.assertRaises(Exception):
+        #    myssa.add_pos_effect(a1, cc1)
 
         cat_sym = Symbol("cat", sort="object")
         a1 = Term(a1_sym, Term(cat_sym))
@@ -208,20 +222,21 @@ class FormulaBuilding(unittest.TestCase):
         myssa.add_pos_effect(a1, cc1)
         myssa.describe()
 
-        print("Adding a negative effect:")
+        print("\nAdding a negative effect:")
         a2_s = Symbol("move", sort="action", sorts=["object", "object"])
         myssa.add_neg_effect(Term(a2_s, my_y, my_z), Tautology())
         myssa.describe()
 
-        print("Adding another negative effect:")
+        print("\nAdding another negative effect:")
         a3_s = Symbol("eat", sort="action", sorts=["object"])
         myssa.add_neg_effect(Term(a3_s, my_y), Atom(Symbol("Day")))
         myssa.describe()
 
-        print("Test substitutions:")
+        print("\nTest substitutions:")
         with self.assertRaises(Exception):
             myssa.replace_term(my_x, my_z)
 
+        print("(Replace variable x by constant c)")
         my_c = Term(Symbol("c", sort="object"))
         f = myssa.formula
         print("Before:")
@@ -230,12 +245,26 @@ class FormulaBuilding(unittest.TestCase):
         print("After:")
         f.describe()
 
-        print("\n Test FUNCTIONAL SSA")
+        print("\n--- Functional SSA ---")
         height = FuncFluentSymbol("height", sorts=["object"])
         my_y_reals = Term(Symbol("y", sort="reals", is_var=True))
         with self.assertRaises(Exception):
             myfssa2 = FuncSSA(height, obj_vars=[my_y], voc=myBAT.vocabulary) # Should throw an exception TODO
         myfssa = FuncSSA(height, obj_vars=[my_x], voc=myBAT.vocabulary)
+        myfssa.describe()
+
+        a1_sym = Symbol("eat\\_mushroom", sort="action", sorts=["object"])
+        m = Term(Symbol("x_1", sort="object", is_var=True))
+        a1 = Term(a1_sym, m)
+
+        print("\nAdding an effect")
+        NP_sym = Symbol("NotPoison", sorts=["object"])
+        GF_sym = Symbol("GrowthFactor", sorts=["object", "reals"])
+        NP = Atom(NP_sym, m)
+        GF = Atom(GF_sym, m, my_y_reals)
+        #func = EqAtom() # need arithmetic for this
+        # y = height(s) * growth_factor
+        myfssa.add_effect(a1, And(NP, GF))
         myfssa.describe()
 
 

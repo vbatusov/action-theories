@@ -102,6 +102,7 @@ class Struct:
             return True
         return False
 
+
     def iter_structs(self): # All Atoms and Terms
         yield self
         for arg in self.args:
@@ -170,6 +171,9 @@ class Term(Struct): #
             return self.name
         return "{}({})".format(self.symbol.name, ", ".join([arg.tex() for arg in self.args]))
 
+    def __hash__(self):
+        return f"Term {self.tex()}".__hash__()
+
 
 class Formula(object):
     """ Any FOL wff """
@@ -183,7 +187,7 @@ class Formula(object):
 
     def free_vars(self): # will this work?
         # all vars which are not in nonfree_vars
-        yield from [v for v in self.vars() if v not in self.nonfree_vars()]
+        yield from set([v for v in self.vars() if v not in self.nonfree_vars()])
         # this works, which is pretty cool, since the methods invoked
         # here exist only in subclasses of Formula
 
@@ -218,9 +222,12 @@ class Formula(object):
             print("I am a sentence {}".format(self.tex()))
         else:
             print("I am an open formula {}".format(self.tex()))
-        print("  My variables (in order of appearance): {}".format(", ".join([v.tex() for v in self.vars()])))
-        print("  My non-free variables: {}".format(", ".join([v.tex() for v in self.nonfree_vars()])))
-        print("  My free variables: {}".format(", ".join([v.tex() for v in self.free_vars()])))
+        #print("  My variables (in order of appearance): {}".format(", ".join([v.tex() for v in self.vars()])))
+        #print("  My non-free variables: {}".format(", ".join([v.tex() for v in self.nonfree_vars()])))
+        free = ", ".join([v.tex() for v in self.free_vars()])
+        nonfree = ", ".join([v.tex() for v in self.nonfree_vars()])
+        (free, nonfree) = tuple(["none" if x == "" else x for x in (free, nonfree)])
+        print("  Free variables: {}, non-free: {}".format(free, nonfree))
 
 class Tautology(Formula):
     def tex(self):
@@ -289,15 +296,15 @@ class Neg(Formula): # negation
 
     def simplified(self):
         """ Returns a shallow syntactic simplification of self """
-        tmp = self.formula.simplified()
-        if isinstance(tmp, Contradiction):
+        f_under_neg = self.formula.simplified()
+        if isinstance(f_under_neg, Contradiction):
             return Tautology()
-        elif isinstance(tmp, Tautology):
+        elif isinstance(f_under_neg, Tautology):
             return Contradiction()
-        elif isinstance(tmp, Neg):
-            return tmp.formula
+        elif isinstance(f_under_neg, Neg):
+            return f_under_neg.formula
         else:
-            return self
+            return Neg(f_under_neg)
 
     def vars(self): # generator
         # All variables in an atom are free
@@ -360,6 +367,8 @@ class Junction(Formula):
 class And(Junction):
     def __new__(cls, *formulas, **kwargs):
         if len(formulas) == 0:
+            print("Constructing And(Junction) from an empty set of formulas!!", formulas)
+            #raise Exception("Let's take a look at the stack")
             return Tautology()
         elif len(formulas) == 1:
             return formulas[0]
@@ -368,6 +377,10 @@ class And(Junction):
 
     def __init__(self, *formulas):
         Junction.__init__(self, *formulas)
+
+    def __deepcopy__(self, memo):
+        cp_f = copy.deepcopy(self.formulas, memo)
+        return And(*cp_f)
 
     def simplified(self):
         """ Returns a shallow syntactic simplification of self """
@@ -397,6 +410,10 @@ class Or(Junction):
 
     def __init__(self, *formulas):
         Junction.__init__(self, *formulas)
+
+    def __deepcopy__(self, memo):
+        cp_f = copy.deepcopy(formulas, memo)
+        return Or(*cp_f)
 
     def simplified(self):
         """ Returns a shallow syntactic simplification of self """
@@ -517,11 +534,11 @@ class Forall(Quantified):
     def simplified(self):
         """ Returns a shallow syntactic simplification of self
             Don't bother simplifying quantifiers for now """
-        tmp = self.formula.simplified()
-        if isinstance(tmp, Contradiction) or isinstance(tmp, Tautology):
-            return tmp
+        f_simplified = self.formula.simplified()
+        if isinstance(f_simplified, Contradiction) or isinstance(f_simplified, Tautology):
+            return f_simplified
         else:
-            return Forall(self.var, self.formula.simplified())
+            return Forall(copy.deepcopy(self.var), f_simplified)
 
     def tex(self):
         return Quantified.tex(self, "forall")
@@ -531,14 +548,19 @@ class Exists(Quantified):
     def __init__(self, var, formula):
         Quantified.__init__(self, var, formula)
 
+    # def _deepcopy_(self, memo):
+    #     cp_v = copy.deepcopy(self.var, memo)
+    #     cp_f = copy.deepcopy(self.formula, memo)
+    #     return Exists(cp_v, cp_f)
+
     def simplified(self):
         """ Returns a shallow syntactic simplification of self
             Don't bother simplifying quantifiers for now """
-        tmp = self.formula.simplified()
-        if isinstance(tmp, Contradiction) or isinstance(tmp, Tautology):
-            return tmp
+        f_simplified = self.formula.simplified()
+        if isinstance(f_simplified, Contradiction) or isinstance(f_simplified, Tautology):
+            return f_simplified
         else:
-            return Exists(self.var, self.formula.simplified())
+            return Exists(copy.deepcopy(self.var), f_simplified)
 
     def tex(self):
         return Quantified.tex(self, "exists")
@@ -710,12 +732,34 @@ class FuncSSA(Formula): # Version with no common ancestor w/ RelSSA
 
     def simplified(self):
         raise Exception("Not supposed to do this on a SSA")
+        # Do what then? Get a plain FOL version from self.formula and do whatever
 
-    def _build_formula(self): # Revise completely
+    def _build_formula(self):
+        print("\nWill build formula from effects")
+        effects_copy = copy.deepcopy(self.effects)
+        print(f"Effects copied. Check: {len(self.effects)} == {len(effects_copy)}")
+        #effects_copy = [copy.deepcopy(e) for e in self.effects]
+        for e in self.effects:
+            print(f"    (+): {e.tex()}", e)
+        for e in effects_copy:
+            print(f"    (-): {e.tex()}", e)
+        print("(end of listing)")
+
         p_eff = Or(*self.effects)
-        n_eff = Or(*self.effects)
+
+        # Protection from side effects of substitution
+        # Maybe make all term methods return-only, like .simplified()?
+
+        n_eff = Or(*effects_copy)
+        print(f"    (-) {n_eff.tex()}")
         n_eff.replace_term(self.y, self.y_) # Replace y by y'
-        # Resume from here vvvvv
+        print(f"    (-) same, y/y': {n_eff.tex()}")
+
+        print("\nAll effects are now ready")
+        print("Positive: ", p_eff.tex())
+        #p_eff.describe()
+        print("Negative: ", n_eff.tex())
+        #n_eff.describe()
 
         frame = And(self.frame_atom, Neg(Exists(self.y_, n_eff)))
         rhs = Or(p_eff, frame)
@@ -740,37 +784,37 @@ class FuncSSA(Formula): # Version with no common ancestor w/ RelSSA
             if a_arg.sort != "object":
                 raise TypeError(f"Action term {action.tex()} has non-object arguments!")
 
-    def _add_effect(self, action, context):
+    def add_effect(self, action, context):
         """ action: fully instantiated action term with variables among obj_vars
                 (other vars will be existentially quantified, automatically)
             context: arbitrary formula uniform in s with free variables among obj_vars
             (a=action_name(\bar{x}) \land \Phi(\bar{x},s))
             EFFECT MUST MENTION y!!!!!!!!
         """
+        print(f"Adding effect: action is {action.tex()}, context is {context.tex()}")
         self._effect_type_check(action, context)
         eq = EqAtom(self.a_var, action)
         effect = And(eq, context)
+        print(f"Becomes a formula: {effect.tex()}")
+        effect.describe()
         # All vars not occurring on LHS will get existentially quantified
-        for v in effect.free_vars():
+        # all except the special variable y
+        for v in set(effect.free_vars()):
             if v not in self.univ_vars:
                 effect = Exists(v, effect)
 
         effect = effect.simplified()
+
+        print(f"Add existentials and simplify: {effect.tex()}")
+
         if not effect.uniform_in(self.s_var):
             raise Exception(f"Effect {effect.tex()} not uniform in s!")
+        if self.y not in effect.free_vars():
+            raise Exception("Effect does not have a free 'y' variable!")
 
-        if positive:
-            self.pos_effects.append(effect)
-        else:
-            self.neg_effects.append(effect)
+
+        self.effects.append(effect)
         self._build_formula()
-
-    def add_pos_effect(self, action, context):
-        self._add_effect(action, context, positive=True)
-
-
-    def add_neg_effect(self, action, context):
-        self._add_effect(action, context, positive=False)
 
     def describe(self):
         self.formula.describe()
