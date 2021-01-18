@@ -253,11 +253,10 @@ class FormulaBuilding(unittest.TestCase):
         myfssa = FuncSSA(height, obj_vars=[my_x], voc=myBAT.vocabulary)
         myfssa.describe()
 
+        print("\nAdding an effect")
         a1_sym = Symbol("eat\\_mushroom", sort="action", sorts=["object"])
         m = Term(Symbol("x_1", sort="object", is_var=True))
         a1 = Term(a1_sym, m)
-
-        print("\nAdding an effect")
         NP_sym = Symbol("NotPoison", sorts=["object"])
         GF_sym = Symbol("GrowthFactor", sorts=["object", "reals"])
         NP = Atom(NP_sym, m)
@@ -266,6 +265,35 @@ class FormulaBuilding(unittest.TestCase):
         # y = height(s) * growth_factor
         myfssa.add_effect(a1, And(NP, GF))
         myfssa.describe()
+
+        sup = myfssa.formula.suppress_forall()
+        print("Suppressed: ")
+        sup.describe()
+
+        print("\nAdding a second effect")
+        # a = think(d, t) \land y = height(d, s) + 2*t
+        a2_sym = Symbol("think", sort="action", sorts=["object", "reals"])
+        t = Term(Symbol("t", sort="reals", is_var=True))
+        d = Term(Symbol("d", sort="object"))
+        two = Term(Symbol("2", sort="reals"))
+        mult = Term(myBAT.vocabulary["*"], two, t)
+        ht = Term(height, d, myBAT.vocabulary["s"])
+        sm = Term(myBAT.vocabulary["+"], ht, mult)
+        ee = EqAtom(my_y_reals, sm)
+        a2 = Term(a2_sym, d, t)
+        myfssa.add_effect(a2, ee)
+        myfssa.describe()
+
+        sup = myfssa.formula.suppress_forall()
+        print("Suppressed: ")
+        sup.describe()
+
+        # Now, let's practice adding SSA to a BAT
+        print("\nAdding SSA to BAT...")
+        myBAT.add_ss_axiom(myssa)
+        myBAT.add_ss_axiom(myfssa)
+
+
 
 
 

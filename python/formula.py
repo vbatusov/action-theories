@@ -82,7 +82,7 @@ class Struct:
 
         for s_sort, arg in zip(symbol.sorts, args):
             if s_sort != arg.sort:
-                raise Exception("Wrong argument sort. Expecting {}, got {}!".format(s_sort, arg.sort()))
+                raise Exception(f"Wrong argument sort. Expecting {s_sort}, got {arg.sort}! Argument in question is {arg}.")
             if not isinstance(arg, Struct):
                 raise TypeError("Struct argument is not a Struct!!")
 
@@ -151,8 +151,8 @@ class Term(Struct): #
         for arg in args:
             if not isinstance(arg, Term):
                 raise TypeError(f"Argument {arg} is not a Term!")
-        if symbol.name == "=":
-            print("***Constructing and equality atom***")
+        #if symbol.name == "=":
+        #    print("***Constructing and equality atom***")
         Struct.__init__(self, symbol, *args)
         self.is_var = symbol.is_var
 
@@ -166,7 +166,7 @@ class Term(Struct): #
 
     def tex(self):
         if self.symbol.infix: # binary, already checked
-            return self.name().join([arg.tex() for arg in self.args])
+            return self.name.join([arg.tex() for arg in self.args])
         if self.arity == 0:
             return self.name
         return "{}({})".format(self.symbol.name, ", ".join([arg.tex() for arg in self.args]))
@@ -174,6 +174,11 @@ class Term(Struct): #
     def __hash__(self):
         return f"Term {self.tex()}".__hash__()
 
+
+class NumTerm(Term): # numerical term
+    """ Arithmetical terms are of sort reals
+        They cover numerical constants and all arithmetical constructs over them """
+    pass
 
 class Formula(object):
     """ Any FOL wff """
@@ -206,6 +211,17 @@ class Formula(object):
 
     def tex(self):
         return ""
+
+    def suppress_forall(self):
+        """ Returns whatever the current formula contains under the leading universal quantifiers """
+        if not self.is_sentence:
+            raise Exception("Suppressing quantifiers in an open formula makes no sense. How are you going to distinguish between free variables and the universally quantified ones?")
+        if not isinstance(self, Forall):
+            raise Exception("Not a universally-quantified sentence.")
+        formula = self
+        while isinstance(formula, Forall):
+            formula = formula.formula  # Dig through quantifiers
+        return formula
 
     def is_sentence(self):
         return not [v for v in self.free_vars()]
@@ -564,260 +580,3 @@ class Exists(Quantified):
 
     def tex(self):
         return Quantified.tex(self, "exists")
-
-class RelSSA(Formula):
-    """ Successor state axiom for a relational fluent
-        Custom-form FOL formula for Basic Action Theories
-        Constructor only takes a relational fluent symbol and terms for variables
-        The RHS is constructed sequentially by adding positive and negative effects
-    """
-    def __init__(self, symbol, obj_vars=[], voc={}):
-        """ Classic Reiter's SSA
-            F(\\bar{x}, do(a,s)) \liff [disj. of pos. effects] \lor F(\bar{x}, s)
-              \land \neg [disj. of neg. effects]
-            obj_vars are the \\bar{x}
-            voc is the vocabulary containing terms 'do(a,s)', 'a', 's'
-        """
-        # Must maintain the pieces and the total formula in sync!
-        if not isinstance(symbol, RelFluentSymbol):
-            raise Exception("A relational SSA must be about a relational fluent")
-
-        for v in obj_vars:
-            if v.sort != "object":
-                raise TypeError("Fluent object arguments must be of sort object")
-
-        self.a_var = voc['a']
-        self.s_var = voc['s']
-        # Create universally quantified variables
-        lhs_atom_args = obj_vars + [voc['do(a,s)']]
-        rhs_atom_args = obj_vars + [voc['s']]
-
-        self.obj_vars = obj_vars
-        self.univ_vars = obj_vars + [voc['a'], voc['s']]
-        self.lhs = Atom(symbol, *lhs_atom_args)
-        self.frame_atom = Atom(symbol, *rhs_atom_args)
-        self.pos_effects = []
-        self.neg_effects = []
-        self.formula = None # this is just to indicate where the formula can be found
-        self._build_formula() # reconcile bits into one formula
-
-    def simplified(self):
-        raise Exception("Not supposed to do this on a SSA")
-
-    def replace_term(self, term, new_term):
-        raise Exception("Not supposed to do this on a SSA")
-
-    def _build_formula(self):
-        p_eff = Or(*self.pos_effects)
-        n_eff = Or(*self.neg_effects)
-        frame = And(self.frame_atom, Neg(n_eff))
-        rhs = Or(p_eff, frame)
-        iff = Iff(self.lhs, rhs)
-
-        quantified = iff
-        for var in reversed(self.univ_vars):
-            quantified = Forall(var, quantified)
-
-        self.formula = quantified.simplified()
-
-        if not self.formula.is_sentence():
-            raise Exception("Resulting SSA is not a sentence. Perhaps an extra var in effects?")
-
-    def _effect_type_check(self, action, context):
-        if not isinstance(action, Term) or action.sort != "action":
-            raise TypeError(f"Bad action term {action.tex()}!")
-        if not isinstance(context, Formula):
-            raise TypeError(f"Bad context formula {context.tex()}!")
-        for a_arg in action.args:
-            if a_arg.sort != "object":
-                raise TypeError(f"Action term {action.tex()} has non-object arguments!")
-
-    def _add_effect(self, action, context, positive=True):
-        """ action: fully instantiated action term with variables among obj_vars
-                (other vars will be existentially quantified, automatically)
-            context: arbitrary formula uniform in s with free variables among obj_vars
-            (a=action_name(\bar{x}) \land \Phi(\bar{x},s))
-        """
-        self._effect_type_check(action, context)
-        eq = EqAtom(self.a_var, action)
-        effect = And(eq, context)
-        # All vars not occurring on LHS will get existentially quantified
-        for v in effect.free_vars():
-            if v not in self.univ_vars:
-                effect = Exists(v, effect)
-
-        effect = effect.simplified()
-        if not effect.uniform_in(self.s_var):
-            raise Exception(f"Effect {effect.tex()} not uniform in s!")
-
-        if positive:
-            self.pos_effects.append(effect)
-        else:
-            self.neg_effects.append(effect)
-        self._build_formula()
-
-    def add_pos_effect(self, action, context):
-        self._add_effect(action, context, positive=True)
-
-
-    def add_neg_effect(self, action, context):
-        self._add_effect(action, context, positive=False)
-
-    def describe(self):
-        self.formula.describe()
-
-    def tex(self):
-        return self.formula.tex()
-
-
-
-class FuncSSA(Formula): # Version with no common ancestor w/ RelSSA
-    """ Successor state axiom for a functional fluent
-        Custom-form FOL formula for Basic Action Theories
-        Constructor only takes a functional fluent symbol and terms for variables
-        The RHS is constructed sequentially by adding effects
-    """
-    def __init__(self, symbol, obj_vars=[], voc={}):
-        """ Classic Reiter's SSA
-            f(\\bar{x}, do(a,s)) = y \liff [disj. of effects wrt y] \lor y = f(\bar{x}, s)
-              \land \neg \exists y' [disj. of effects wrt y']
-            obj_vars are the \\bar{x}
-            voc is the vocabulary containing terms 'do(a,s)', 'a', 's'
-            y and y' are created here, not passed as arguments
-        """
-        if not isinstance(symbol, FuncFluentSymbol):
-            raise Exception("A functional SSA must be about a functional fluent")
-
-        for v in obj_vars:
-            if v.sort != "object":
-                raise TypeError("Fluent object arguments must be of sort object")
-
-        # Remember the important standard symbols for easy access
-        self.a_var = voc['a']
-        self.s_var = voc['s']
-
-        # Create universally quantified variables for the fluent eq-atom on both sides
-        self.lhs_atom_args = obj_vars + [voc['do(a,s)']]
-        self.rhs_atom_args = obj_vars + [voc['s']]
-
-
-        # The RHS of equality, the distinguished y and y' variables
-        # Must check for collisions with object variables and with effect variables (even if quantified?)
-        self.y = Term(Symbol("y", sort=symbol.sort, is_var=True))
-        self.y_ = Term(Symbol("y'", sort=symbol.sort, is_var=True))
-
-        if self.y.name in [v.name for v in obj_vars]:
-            # This is, in fact, allowed in first-order logic - having two variables of same name but different Sorts
-            # However, they will look identical in formulas, so let's rule this out
-            raise Exception("Variable 'y' is reserved in functional SSA! Can't use for an argument.")
-
-        # \bar{x} - just the object argument variables
-        self.obj_vars = obj_vars
-        # All implicitly quantified variables
-        self.univ_vars = obj_vars + [self.y, voc['a'], voc['s']]
-
-        # Build the actual func. fluent terms
-        self.lhs_fluent = Term(symbol, *self.lhs_atom_args)
-        self.rhs_fluent = Term(symbol, *self.rhs_atom_args)
-        # LHS equality
-        self.lhs = EqAtom(self.lhs_fluent, self.y)
-        # RHS equality
-        self.frame_atom = EqAtom(self.y, self.rhs_fluent)
-
-        # For func. fluents, all effects are both positive and negative
-        self.effects = []
-
-        self.formula = None # this is just to indicate where the formula can be found
-        self._build_formula() # reconcile bits into one formula
-
-    def simplified(self):
-        raise Exception("Not supposed to do this on a SSA")
-        # Do what then? Get a plain FOL version from self.formula and do whatever
-
-    def _build_formula(self):
-        print("\nWill build formula from effects")
-        effects_copy = copy.deepcopy(self.effects)
-        print(f"Effects copied. Check: {len(self.effects)} == {len(effects_copy)}")
-        #effects_copy = [copy.deepcopy(e) for e in self.effects]
-        for e in self.effects:
-            print(f"    (+): {e.tex()}", e)
-        for e in effects_copy:
-            print(f"    (-): {e.tex()}", e)
-        print("(end of listing)")
-
-        p_eff = Or(*self.effects)
-
-        # Protection from side effects of substitution
-        # Maybe make all term methods return-only, like .simplified()?
-
-        n_eff = Or(*effects_copy)
-        print(f"    (-) {n_eff.tex()}")
-        n_eff.replace_term(self.y, self.y_) # Replace y by y'
-        print(f"    (-) same, y/y': {n_eff.tex()}")
-
-        print("\nAll effects are now ready")
-        print("Positive: ", p_eff.tex())
-        #p_eff.describe()
-        print("Negative: ", n_eff.tex())
-        #n_eff.describe()
-
-        frame = And(self.frame_atom, Neg(Exists(self.y_, n_eff)))
-        rhs = Or(p_eff, frame)
-        iff = Iff(self.lhs, rhs)
-
-        quantified = iff
-        for var in reversed(self.univ_vars):
-            quantified = Forall(var, quantified)
-
-        self.formula = quantified.simplified()
-
-        if not self.formula.is_sentence():
-            #self.formula.describe()
-            raise Exception("Resulting SSA is not a sentence. Perhaps an extra var in effects?")
-
-    def _effect_type_check(self, action, context):
-        if not isinstance(action, Term) or action.sort != "action":
-            raise TypeError(f"Bad action term {action.tex()}!")
-        if not isinstance(context, Formula):
-            raise TypeError(f"Bad context formula {context.tex()}!")
-        for a_arg in action.args:
-            if a_arg.sort != "object":
-                raise TypeError(f"Action term {action.tex()} has non-object arguments!")
-
-    def add_effect(self, action, context):
-        """ action: fully instantiated action term with variables among obj_vars
-                (other vars will be existentially quantified, automatically)
-            context: arbitrary formula uniform in s with free variables among obj_vars
-            (a=action_name(\bar{x}) \land \Phi(\bar{x},s))
-            EFFECT MUST MENTION y!!!!!!!!
-        """
-        print(f"Adding effect: action is {action.tex()}, context is {context.tex()}")
-        self._effect_type_check(action, context)
-        eq = EqAtom(self.a_var, action)
-        effect = And(eq, context)
-        print(f"Becomes a formula: {effect.tex()}")
-        effect.describe()
-        # All vars not occurring on LHS will get existentially quantified
-        # all except the special variable y
-        for v in set(effect.free_vars()):
-            if v not in self.univ_vars:
-                effect = Exists(v, effect)
-
-        effect = effect.simplified()
-
-        print(f"Add existentials and simplify: {effect.tex()}")
-
-        if not effect.uniform_in(self.s_var):
-            raise Exception(f"Effect {effect.tex()} not uniform in s!")
-        if self.y not in effect.free_vars():
-            raise Exception("Effect does not have a free 'y' variable!")
-
-
-        self.effects.append(effect)
-        self._build_formula()
-
-    def describe(self):
-        self.formula.describe()
-
-    def tex(self):
-        return self.formula.tex()
