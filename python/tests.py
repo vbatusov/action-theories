@@ -297,39 +297,51 @@ class FormulaBuilding(unittest.TestCase):
 
 
     def test_BW(self):
+        # Create a basic action theory
         bat = BasicActionTheory("Blocks World")
         bat.describe()
 
-        a_s = Symbol("move", sort="action", sorts=["object","object"])
+        # Create common symbols and terms
+        s = bat.special_terms["s"]
+        S_0 = bat.special_terms["S_0"]
+        move = Symbol("move", sort="action", sorts=["object","object"])
         x = Term(Symbol("x", sort="object", is_var=True))
         y = Term(Symbol("y", sort="object", is_var=True))
-        move_x_y = Term(a_s, x, y)
+        z = Term(Symbol("z", sort="object", is_var=True))
+        move_x_y = Term(move, x, y)
+        move_y_z = Term(move, y, z)
+        move_y_x = Term(move, y, x)
 
+        # Create domain constants
         T = Term(Symbol("T", sort="object"))
         A = Term(Symbol("A", sort="object"))
         B = Term(Symbol("B", sort="object"))
         C = Term(Symbol("C", sort="object"))
 
-        on = Symbol("on", sorts=["object", "object", "situation"])
-        clear = Symbol("clear", sorts=["object", "situation"])
+        # Create fluent symbols
+        on = FuncFluentSymbol("on", sorts=["object"], sort="object")
+        clear = RelFluentSymbol("clear", sorts=["object"])
 
-        clear_x_s = Atom(clear, x, bat.special_terms["s"])
+        # Construct subformulas and formulas
+        clear_x_s = Atom(clear, x, s)
         neq_x_y = Neg(EqAtom(x, y))
         neq_x_T = Neg(EqAtom(x, T))
-        clear_y_s = Atom(clear, y, bat.special_terms["s"])
+        clear_y_s = Atom(clear, y, s)
         eq_y_T = EqAtom(y, T)
         rhs = And(clear_x_s, neq_x_y, neq_x_T, Or(clear_y_s, eq_y_T))
 
+        # Add a precondition axiom
         apa = APA(move_x_y, rhs=rhs)
         bat.add_ap_axiom(apa)
         bat.describe()
 
-        init1 = InitAxiom(Atom(on, A, T, bat.special_terms["S_0"]).close())
-        init2 = InitAxiom(Atom(on, C, B, bat.special_terms["S_0"]).close())
-        init3 = InitAxiom(Atom(on, B, T, bat.special_terms["S_0"]).close())
-        init4 = InitAxiom(Atom(clear, A, bat.special_terms["S_0"]).close())
-        init5 = InitAxiom(Atom(clear, C, bat.special_terms["S_0"]).close())
-        init6 = InitAxiom(Neg(Atom(clear, B, bat.special_terms["S_0"]).close()))
+        # Create and add initial state axioms
+        init1 = InitAxiom(EqAtom(Term(on, A, S_0), T).close())
+        init2 = InitAxiom(EqAtom(Term(on, C, S_0), B).close())
+        init3 = InitAxiom(EqAtom(Term(on, B, S_0), T).close())
+        init4 = InitAxiom(Atom(clear, A, S_0).close())
+        init5 = InitAxiom(Atom(clear, C, S_0).close())
+        init6 = InitAxiom(Neg(Atom(clear, B, S_0).close()))
 
         bat.add_init_axiom(init1)
         bat.add_init_axiom(init2)
@@ -338,6 +350,29 @@ class FormulaBuilding(unittest.TestCase):
         bat.add_init_axiom(init5)
         bat.add_init_axiom(init6)
         bat.describe()
+
+        # Construct and add SSA for clear (relational)
+        ssa_clear = RelSSA(clear, [x])  # Create the frame-only axiom
+        ssa_clear.add_pos_effect(move_y_z, context=EqAtom(y, Term(on, x, s))) # Add a positive effect
+        ssa_clear.add_neg_effect(move_y_x)
+        bat.add_ss_axiom(ssa_clear)
+        bat.describe()
+
+        # Construct and add SSA for on (functional)
+        ssa_on = FuncSSA(on, [x])
+        ssa_on.add_effect(move_x_y)
+        bat.add_ss_axiom(ssa_on)
+        bat.describe()
+
+        # NExt, add SSA
+        # Implement BAT.situations() to iterate through the entire infinite tree of situations
+        # Finish regression and test on a ground situation term
+        # Semantics
+        # At this point, will be able to implement actual cause analysis
+        # Extend to hybrid case, with both FO and SO SEA
+        # Test on a toy domain with numerical functions (Lotka-Volterra Zayats-Volk)
+        # Implement regression for Hybrid
+        # Implement causal analysis for hybrid
 
 
 if __name__ == '__main__':

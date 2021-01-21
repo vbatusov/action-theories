@@ -7,6 +7,90 @@ def legal_name(n):
     #    raise Exception("Bad name '{}'".format(n))
     return n
 
+class Theory:
+    """ A vocabulary and a set of formulas over that vocabulary.
+        Maintains a map of all mentions of each symbol.
+        Handles the creation of legal formulas (wff).
+        Can either add new formulas to itself,
+        or just returns without adding, to be used for regression.
+
+        Generic class, so allows arbitrary sorts
+    """
+    def __init__(self, name, sorts=[], subsets=[]):
+        self.name = legal_name(name)
+        # Let's agree to have just one arity and type per symbol name
+        # There is literally no downside to this
+        self.sorts = ["reals", "object", None] # Default sorts. None is for predicates
+        for s in sorts: # Custom sorts
+            self.add_sort(s)
+
+        self.vocabulary = {} # Maps symbol_name to Symbol
+        #self.vocabulary["="] = Symbol("=", sort="situation")
+        # add arithmetics here?
+        self.vocabulary["+"] = Symbol("+", sort="reals", sorts=["reals", "reals"], infix=True)
+        self.vocabulary["-"] = Symbol("-", sort="reals", sorts=["reals", "reals"], infix=True)
+        self.vocabulary["*"] = Symbol("*", sort="reals", sorts=["reals", "reals"], infix=True)
+        self.vocabulary["/"] = Symbol("/", sort="reals", sorts=["reals", "reals"], infix=True)
+        self.vocabulary["^"] = Symbol("^", sort="reals", sorts=["reals", "reals"], infix=True)
+
+        self.axioms = {"default" : set()} # Sets of Formula objects (no free variables)
+        # It's a dict because we want to allow one to categorize axioms into subsets.
+        for subset in subsets:
+            self.axioms[subset] = set()
+        self.occurs = {} # A map from vocabulary to sentences with occurrences
+
+    def add_sort(self, new_sort):
+        if not legal_name(new_sort) or new_sort in self.sorts:
+            raise TypeError("Cannot add sort '{}'".format(new_sort))
+        self.sorts.append(new_sort)
+
+    def add_symbol(self, symbol):
+        # Check if name is legal
+        if not legal_name(symbol.name):
+            raise ValueError("Illegal symbol name '{}'".format(symbol.name))
+
+        # Check if sorts are legal
+        if symbol.sort not in self.sorts:
+            raise TypeError("Sort {} not part of theory".format(symbol.sort))
+        for s in symbol.sorts:
+            if s not in self.sorts:
+                raise TypeError("Sort {} not part of theory".format(s))
+
+        # Check if symbol already added
+        if symbol.name in self.vocabulary:
+            raise Exception("Symbol {} already in vocabulary".format(str(symbol)))
+
+        # Add only if legit
+        self.vocabulary[symbol.name] = symbol
+
+    def add_axiom(self, formula, force=False, where="default"): # force means force-add unknown symbols to vocab.
+        """ Formula must be a sentence over the vocabulary """
+        # Check if every symbol used in the formula
+        # (including quantified variables, because they may not occur
+        # anywhere as arguments) is in theory's vocabulary
+        if not formula.is_sentence():
+            raise Exception("An open formula cannot be an axiom!")
+            # Future: automatically quantify free vars with \forall
+
+        if formula in self.axioms[where]:
+            raise Exception("Axiom already a part of theory!")
+
+        for s in formula.symbols():
+            if s not in self.vocabulary.values():
+                if not force:
+                    raise Exception("Symbol {} is not in {}'s vocabulary!".format(s.name, self.name))
+                else:
+                    print("Warning: forcing new symbol {} into vocabulary".format(s.name))
+                    self.add_symbol(s)
+
+        self.axioms[where].add(formula)
+
+
+    def print_vocabulary(self):
+        print("Vocabulary of theory '{}':".format(self.name))
+        for s_n, s in self.vocabulary.items():
+            print("  \t{}".format(str(s)))
+
 
 class Sitcalc(object):
     """ Stores common sitcalc symbols and terms """
@@ -89,7 +173,7 @@ class SSA(Axiom, Sitcalc):
 class RelSSA(SSA):
     """ Successor state axiom for a relational fluent
         Custom-form FOL formula for Basic Action Theories
-        Constructor only takes a relational fluent symbol and terms for variables
+        Constructor only takes a relational fluent symbol and terms for variables (excluding situation arg)
         The RHS is constructed sequentially by adding positive and negative effects
     """
     def __init__(self, symbol, obj_vars=[]):
@@ -172,11 +256,11 @@ class RelSSA(SSA):
             self.neg_effects.append(effect)
         self._build_formula()
 
-    def add_pos_effect(self, action, context):
+    def add_pos_effect(self, action, context=Tautology()):
         self._add_effect(action, context, positive=True)
 
 
-    def add_neg_effect(self, action, context):
+    def add_neg_effect(self, action, context=Tautology()):
         self._add_effect(action, context, positive=False)
 
     def describe(self):
@@ -187,9 +271,7 @@ class RelSSA(SSA):
 
 
 
-class FuncSSA(SSA): # Version with no common ancestor w/ RelSSA
-    # In truth, these axioms should not be chilren of formulas. We need a new superclass, something like Axiom.
-    # Every axiom is in the end a formula, but it is not part of the inductive definition of formulas.
+class FuncSSA(SSA):
     """ Successor state axiom for a functional fluent
         Custom-form FOL formula for Basic Action Theories
         Constructor only takes a functional fluent symbol and terms for variables
@@ -304,7 +386,7 @@ class FuncSSA(SSA): # Version with no common ancestor w/ RelSSA
                 # Can't remember why only object args are allowed. Why?
                 #raise TypeError(f"Action term {action.tex()} has non-object arguments!")
 
-    def add_effect(self, action, context):
+    def add_effect(self, action, context=Tautology()):
         """ action: fully instantiated action term with variables among obj_vars
                 (other vars will be existentially quantified, automatically)
             context: arbitrary formula uniform in s with free variables among obj_vars
@@ -341,93 +423,6 @@ class FuncSSA(SSA): # Version with no common ancestor w/ RelSSA
 
     def tex(self):
         return self.formula.tex()
-
-
-class Theory:
-    """ A vocabulary and a set of formulas over that vocabulary.
-        Maintains a map of all mentions of each symbol.
-        Handles the creation of legal formulas (wff).
-        Can either add new formulas to itself,
-        or just returns without adding, to be used for regression.
-
-        Generic class, so allows arbitrary sorts
-    """
-    def __init__(self, name, sorts=[], subsets=[]):
-        self.name = legal_name(name)
-        # Let's agree to have just one arity and type per symbol name
-        # There is literally no downside to this
-        self.sorts = ["reals", "object", None] # Default sorts. None is for predicates
-        for s in sorts: # Custom sorts
-            self.add_sort(s)
-
-        self.vocabulary = {} # Maps symbol_name to Symbol
-        #self.vocabulary["="] = Symbol("=", sort="situation")
-        # add arithmetics here?
-        self.vocabulary["+"] = Symbol("+", sort="reals", sorts=["reals", "reals"], infix=True)
-        self.vocabulary["-"] = Symbol("-", sort="reals", sorts=["reals", "reals"], infix=True)
-        self.vocabulary["*"] = Symbol("*", sort="reals", sorts=["reals", "reals"], infix=True)
-        self.vocabulary["/"] = Symbol("/", sort="reals", sorts=["reals", "reals"], infix=True)
-        self.vocabulary["^"] = Symbol("^", sort="reals", sorts=["reals", "reals"], infix=True)
-
-        self.axioms = {"default" : set()} # Sets of Formula objects (no free variables)
-        # It's a dict because we want to allow one to categorize axioms into subsets.
-        for subset in subsets:
-            self.axioms[subset] = set()
-        self.occurs = {} # A map from vocabulary to sentences with occurrences
-
-    def add_sort(self, new_sort):
-        if not legal_name(new_sort) or new_sort in self.sorts:
-            raise TypeError("Cannot add sort '{}'".format(new_sort))
-        self.sorts.append(new_sort)
-
-    def add_symbol(self, symbol):
-        # Check if name is legal
-        if not legal_name(symbol.name):
-            raise ValueError("Illegal symbol name '{}'".format(symbol.name))
-
-        # Check if sorts are legal
-        if symbol.sort not in self.sorts:
-            raise TypeError("Sort {} not part of theory".format(symbol.sort))
-        for s in symbol.sorts:
-            if s not in self.sorts:
-                raise TypeError("Sort {} not part of theory".format(s))
-
-        # Check if symbol already added
-        if symbol.name in self.vocabulary:
-            raise Exception("Symbol {} already in vocabulary".format(str(symbol)))
-
-        # Add only if legit
-        self.vocabulary[symbol.name] = symbol
-
-    def add_axiom(self, formula, force=False, where="default"): # force means force-add unknown symbols to vocab.
-        """ Formula must be a sentence over the vocabulary """
-        # Check if every symbol used in the formula
-        # (including quantified variables, because they may not occur
-        # anywhere as arguments) is in theory's vocabulary
-        if not formula.is_sentence():
-            raise Exception("An open formula cannot be an axiom!")
-            # Future: automatically quantify free vars with \forall
-
-        if formula in self.axioms[where]:
-            raise Exception("Axiom already a part of theory!")
-
-        for s in formula.symbols():
-            if s not in self.vocabulary.values():
-                if not force:
-                    raise Exception("Symbol {} is not in {}'s vocabulary!".format(s.name, self.name))
-                else:
-                    print("Warning: forcing new symbol {} into vocabulary".format(s.name))
-                    self.add_symbol(s)
-
-        self.axioms[where].add(formula)
-
-
-    def print_vocabulary(self):
-        print("Vocabulary of theory '{}':".format(self.name))
-        for s_n, s in self.vocabulary.items():
-            print("  \t{}".format(str(s)))
-
-
 
 
 class BasicActionTheory(Theory, Sitcalc):
