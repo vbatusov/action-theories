@@ -160,20 +160,37 @@ class Term(Struct): #
     def __str__(self):
         return self.tex()
 
-    def terms(self):
-        yield self
+    def terms(self, sort="any"):
+        if sort == "any" or self.sort == sort:
+            yield self
         for arg in self.args:
-            yield from arg.terms()
+            yield from arg.terms(sort=sort)
 
     def tex(self):
         # colours
+        # Background = variable
+        # No background = not variable
         functor = self.symbol.name
-        if self.symbol.is_var:
-            functor = Fore.RED + self.symbol.name + Style.RESET_ALL
-        else:
-            functor = Fore.GREEN + self.symbol.name + Style.RESET_ALL
+        col = Style.BRIGHT
         if self.symbol.sort == "situation":
-            functor = Back.BLUE + Style.BRIGHT + functor + Style.RESET_ALL
+            col += Fore.GREEN
+        elif self.symbol.sort == "action":
+            col += Fore.YELLOW
+        elif self.symbol.sort == "object":
+            col += Fore.MAGENTA
+        elif self.symbol.sort == "reals":
+            col += Fore.BLUE
+        elif self.symbol.sort == "time":
+            col += Fore.CYAN
+        else:
+            pass
+
+        if self.symbol.is_var: # variables are red; override
+            col += Back.WHITE
+
+        functor = col + functor + Style.RESET_ALL
+
+
 
         if self.symbol.infix: # binary, already checked
             return functor.join([arg.tex() for arg in self.args])
@@ -233,7 +250,10 @@ class Formula(object):
     def nonfree_vars(self):
         yield from []
 
-    def terms(self):
+    def terms(self, sort="any"):
+        yield from []
+
+    def atoms(self):
         yield from []
 
     def replace_term(self, term, new_term):
@@ -250,8 +270,8 @@ class Formula(object):
 
     def uniform_in(self, term):
         """ True iff, in self, every term of sort term.sort is term. """
-        for t in self.terms():
-            if t.sort == term.sort and term != t:
+        for t in self.terms(sort=term.sort):
+            if term != t:
                 return False
         return True
 
@@ -298,16 +318,19 @@ class Atom(Formula, Struct):
         return # It's an atom
         yield
 
-    def terms(self):
+    def terms(self, sort="any"):
         for arg in self.args:
-            yield from arg.terms()
+            yield from arg.terms(sort=sort)
+
+    def atoms(self):
+        yield self
 
     def replace_term(self, term, new_term):
         """ Use Struct's, and not Formula's, because Atom inherits from both"""
         Struct.replace_term(self, term, new_term)
 
     def tex(self):
-        functor = Fore.CYAN + self.symbol.name + Style.RESET_ALL
+        functor = Style.BRIGHT + Fore.WHITE + self.symbol.name + Style.RESET_ALL
 
         if len(self.args) > 0:
             return "{}({})".format(functor, ", ".join([arg.tex() for arg in self.args]))
@@ -322,6 +345,8 @@ class EqAtom(Atom):
             raise TypeError(f"Equality must have two arguments, {len(args)} given.")
         if args[0].sort != args[1].sort:
             raise TypeError(f"Cannot equate terms of distinct sorts! {args[0].sort} vs. {args[1].sort}")
+        if args[0].sort == "situation":
+            raise Exception("Equality between situations is prohibited.")
 
         #print(f"Constructing EqAtom using {args[0].tex()} and {args[1].tex()}")
         #print(f"Sorts: args[0] is {args[0].sort}, args[1] is {args[1].sort}")
@@ -360,8 +385,11 @@ class Neg(Formula): # negation
     def symbols(self):
         yield from self.formula.symbols()
 
-    def terms(self):
-        yield from self.formula.terms()
+    def terms(self, sort="any"):
+        yield from self.formula.terms(sort=sort)
+
+    def atoms(self):
+        yield from self.formula.atoms()
 
     def replace_term(self, term, new_term):
         #print(f"Negation: replacing {term.tex()} by {new_term.tex()}")
@@ -394,9 +422,13 @@ class Junction(Formula):
         for f in self.formulas:
             yield from f.symbols()
 
-    def terms(self):
+    def terms(self, sort="any"):
         for f in self.formulas:
-            yield from f.terms()
+            yield from f.terms(sort)
+
+    def atoms(self):
+        for f in self.formulas:
+            yield from f.atoms()
 
     def replace_term(self, term, new_term):
         #print(f"Junction: replacing {term.tex()} by {new_term.tex()}")
@@ -497,7 +529,6 @@ class Implies(Junction):
         else:
             return Implies(premise, conclusion)
 
-
     def tex(self):
         tex1 = "({})".format(self.formulas[0].tex()) if isinstance(self.formulas[0], Junction) else self.formulas[0].tex()
         tex2 = "({})".format(self.formulas[1].tex()) if isinstance(self.formulas[0], Junction) else self.formulas[1].tex()
@@ -557,9 +588,12 @@ class Quantified(Formula):
         yield self.var.symbol
         yield from self.formula.symbols()
 
-    def terms(self):
-        yield from self.formula.terms()
+    def terms(self, sort="any"):
+        yield from self.formula.terms(sort=sort)
 
+    def atoms(self):
+        yield from self.formula.atoms()
+        
     def replace_term(self, term, new_term):
         self.formula.replace_term(term, new_term)
 
@@ -602,3 +636,84 @@ class Exists(Quantified):
 
     def tex(self):
         return Quantified.tex(self, "exists")
+
+
+class Theory:
+    """ A vocabulary and a set of formulas over that vocabulary.
+        Maintains a map of all mentions of each symbol.
+        Handles the creation of legal formulas (wff).
+        Can either add new formulas to itself,
+        or just returns without adding, to be used for regression.
+
+        Generic class, so allows arbitrary sorts
+    """
+    def __init__(self, name, sorts=[], subsets=[]):
+        self.name = name
+        # Let's agree to have just one arity and type per symbol name
+        # There is literally no downside to this
+        self.sorts = ["reals", "object", None] # Default sorts. None is for predicates
+        for s in sorts: # Custom sorts
+            self.add_sort(s)
+
+        self.vocabulary = {} # Maps symbol_name to Symbol
+        #self.vocabulary["="] = Symbol("=", sort="situation")
+        # add arithmetics here?
+        self.vocabulary["+"] = Symbol("+", sort="reals", sorts=["reals", "reals"], infix=True)
+        self.vocabulary["-"] = Symbol("-", sort="reals", sorts=["reals", "reals"], infix=True)
+        self.vocabulary["*"] = Symbol("*", sort="reals", sorts=["reals", "reals"], infix=True)
+        self.vocabulary["/"] = Symbol("/", sort="reals", sorts=["reals", "reals"], infix=True)
+        self.vocabulary["^"] = Symbol("^", sort="reals", sorts=["reals", "reals"], infix=True)
+
+        self.axioms = {"default" : set()} # Sets of Formula objects (no free variables)
+        # It's a dict because we want to allow one to categorize axioms into subsets.
+        for subset in subsets:
+            self.axioms[subset] = set()
+        self.occurs = {} # A map from vocabulary to sentences with occurrences
+
+    def add_sort(self, new_sort):
+        if new_sort in self.sorts:
+            raise TypeError("Cannot add sort '{}'".format(new_sort))
+        self.sorts.append(new_sort)
+
+    def add_symbol(self, symbol):
+        # Check if sorts are legal
+        if symbol.sort not in self.sorts:
+            raise TypeError("Sort {} not part of theory".format(symbol.sort))
+        for s in symbol.sorts:
+            if s not in self.sorts:
+                raise TypeError("Sort {} not part of theory".format(s))
+
+        # Check if symbol already added
+        if symbol.name in self.vocabulary:
+            raise Exception("Symbol {} already in vocabulary".format(str(symbol)))
+
+        # Add only if legit
+        self.vocabulary[symbol.name] = symbol
+
+    def add_axiom(self, formula, force=False, where="default"): # force means force-add unknown symbols to vocab.
+        """ Formula must be a sentence over the vocabulary """
+        # Check if every symbol used in the formula
+        # (including quantified variables, because they may not occur
+        # anywhere as arguments) is in theory's vocabulary
+        if not formula.is_sentence():
+            raise Exception("An open formula cannot be an axiom!")
+            # Future: automatically quantify free vars with \forall
+
+        if formula in self.axioms[where]:
+            raise Exception("Axiom already a part of theory!")
+
+        for s in formula.symbols():
+            if s not in self.vocabulary.values():
+                if not force:
+                    raise Exception("Symbol {} is not in {}'s vocabulary!".format(s.name, self.name))
+                else:
+                    print("Warning: forcing new symbol {} into vocabulary".format(s.name))
+                    self.add_symbol(s)
+
+        self.axioms[where].add(formula)
+
+
+    def print_vocabulary(self):
+        print("Vocabulary of theory '{}':".format(self.name))
+        for s_n, s in self.vocabulary.items():
+            print("  \t{}".format(str(s)))

@@ -1,6 +1,6 @@
 import unittest
-from theory import *
-from formula import *
+from sitcalc import *
+from fol import *
 
 class FormulaBuilding(unittest.TestCase):
     # self.assertTrue(...)
@@ -277,7 +277,7 @@ class FormulaBuilding(unittest.TestCase):
         d = Term(Symbol("d", sort="object"))
         two = Term(Symbol("2", sort="reals"))
         mult = Term(myBAT.vocabulary["*"], two, t)
-        ht = Term(height, d, myBAT.special_terms["s"])
+        ht = Term(height, d, Sitcalc.term["s"])
         sm = Term(myBAT.vocabulary["+"], ht, mult)
         ee = EqAtom(my_y_reals, sm)
         a2 = Term(a2_sym, d, t)
@@ -299,11 +299,11 @@ class FormulaBuilding(unittest.TestCase):
     def test_BW(self):
         # Create a basic action theory
         bat = BasicActionTheory("Blocks World")
-        bat.describe()
+        #bat.describe()
 
         # Create common symbols and terms
-        s = bat.special_terms["s"]
-        S_0 = bat.special_terms["S_0"]
+        s = Sitcalc.term["s"]
+        S_0 = Sitcalc.term["S_0"]
         move = Symbol("move", sort="action", sorts=["object","object"])
         x = Term(Symbol("x", sort="object", is_var=True))
         y = Term(Symbol("y", sort="object", is_var=True))
@@ -333,7 +333,7 @@ class FormulaBuilding(unittest.TestCase):
         # Add a precondition axiom
         apa = APA(move_x_y, rhs=rhs)
         bat.add_ap_axiom(apa)
-        bat.describe()
+        #bat.describe()
 
         # Create and add initial state axioms
         init1 = InitAxiom(EqAtom(Term(on, A, S_0), T).close())
@@ -349,14 +349,14 @@ class FormulaBuilding(unittest.TestCase):
         bat.add_init_axiom(init4)
         bat.add_init_axiom(init5)
         bat.add_init_axiom(init6)
-        bat.describe()
+        #bat.describe()
 
         # Construct and add SSA for clear (relational)
         ssa_clear = RelSSA(clear, [x])  # Create the frame-only axiom
         ssa_clear.add_pos_effect(move_y_z, context=EqAtom(y, Term(on, x, s))) # Add a positive effect
         ssa_clear.add_neg_effect(move_y_x)
         bat.add_ss_axiom(ssa_clear)
-        bat.describe()
+        #bat.describe()
 
         # Construct and add SSA for on (functional)
         ssa_on = FuncSSA(on, [x])
@@ -364,7 +364,26 @@ class FormulaBuilding(unittest.TestCase):
         bat.add_ss_axiom(ssa_on)
         bat.describe()
 
-        # NExt, add SSA
+        # Test regression
+        print("\nTest regression")
+        w = Atom(clear, A, S_0)
+        sitterm = S_0
+        do_a_s = Sitcalc.term["do(a,s)"]
+
+        #is_reg = bat.is_regressable_to(w, sitterm)
+        #print(f"1 {w.tex()} regressable to {sitterm}? -> {is_reg}")
+
+        #is_reg = bat.is_regressable_to(w, do_a_s)
+        #print(f"2 {w.tex()} regressable to {do_a_s}? -> {is_reg}")
+
+        w = Atom(clear, A, do_a_s)
+        is_reg = bat.is_regressable_to(w, do_a_s)
+        print(f"3 {w.tex()} regressable to {do_a_s}? -> {is_reg}")
+        #is_reg = bat.is_regressable_to(w, S_0)
+        #print(f"4 {w.tex()} regressable to {S_0}? -> {is_reg}")
+        #is_reg = bat.is_regressable_to(w, s)
+        #print(f"5 {w.tex()} regressable to {s}? -> {is_reg}")
+
         # Implement BAT.situations() to iterate through the entire infinite tree of situations
         # Finish regression and test on a ground situation term
         # Semantics

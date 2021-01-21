@@ -1,113 +1,50 @@
-from formula import *
+from fol import *
 from colorama import Fore, Back, Style  # Pretty printing
-
-
-def legal_name(n):
-    #if not n.isalpha():
-    #    raise Exception("Bad name '{}'".format(n))
-    return n
-
-class Theory:
-    """ A vocabulary and a set of formulas over that vocabulary.
-        Maintains a map of all mentions of each symbol.
-        Handles the creation of legal formulas (wff).
-        Can either add new formulas to itself,
-        or just returns without adding, to be used for regression.
-
-        Generic class, so allows arbitrary sorts
-    """
-    def __init__(self, name, sorts=[], subsets=[]):
-        self.name = legal_name(name)
-        # Let's agree to have just one arity and type per symbol name
-        # There is literally no downside to this
-        self.sorts = ["reals", "object", None] # Default sorts. None is for predicates
-        for s in sorts: # Custom sorts
-            self.add_sort(s)
-
-        self.vocabulary = {} # Maps symbol_name to Symbol
-        #self.vocabulary["="] = Symbol("=", sort="situation")
-        # add arithmetics here?
-        self.vocabulary["+"] = Symbol("+", sort="reals", sorts=["reals", "reals"], infix=True)
-        self.vocabulary["-"] = Symbol("-", sort="reals", sorts=["reals", "reals"], infix=True)
-        self.vocabulary["*"] = Symbol("*", sort="reals", sorts=["reals", "reals"], infix=True)
-        self.vocabulary["/"] = Symbol("/", sort="reals", sorts=["reals", "reals"], infix=True)
-        self.vocabulary["^"] = Symbol("^", sort="reals", sorts=["reals", "reals"], infix=True)
-
-        self.axioms = {"default" : set()} # Sets of Formula objects (no free variables)
-        # It's a dict because we want to allow one to categorize axioms into subsets.
-        for subset in subsets:
-            self.axioms[subset] = set()
-        self.occurs = {} # A map from vocabulary to sentences with occurrences
-
-    def add_sort(self, new_sort):
-        if not legal_name(new_sort) or new_sort in self.sorts:
-            raise TypeError("Cannot add sort '{}'".format(new_sort))
-        self.sorts.append(new_sort)
-
-    def add_symbol(self, symbol):
-        # Check if name is legal
-        if not legal_name(symbol.name):
-            raise ValueError("Illegal symbol name '{}'".format(symbol.name))
-
-        # Check if sorts are legal
-        if symbol.sort not in self.sorts:
-            raise TypeError("Sort {} not part of theory".format(symbol.sort))
-        for s in symbol.sorts:
-            if s not in self.sorts:
-                raise TypeError("Sort {} not part of theory".format(s))
-
-        # Check if symbol already added
-        if symbol.name in self.vocabulary:
-            raise Exception("Symbol {} already in vocabulary".format(str(symbol)))
-
-        # Add only if legit
-        self.vocabulary[symbol.name] = symbol
-
-    def add_axiom(self, formula, force=False, where="default"): # force means force-add unknown symbols to vocab.
-        """ Formula must be a sentence over the vocabulary """
-        # Check if every symbol used in the formula
-        # (including quantified variables, because they may not occur
-        # anywhere as arguments) is in theory's vocabulary
-        if not formula.is_sentence():
-            raise Exception("An open formula cannot be an axiom!")
-            # Future: automatically quantify free vars with \forall
-
-        if formula in self.axioms[where]:
-            raise Exception("Axiom already a part of theory!")
-
-        for s in formula.symbols():
-            if s not in self.vocabulary.values():
-                if not force:
-                    raise Exception("Symbol {} is not in {}'s vocabulary!".format(s.name, self.name))
-                else:
-                    print("Warning: forcing new symbol {} into vocabulary".format(s.name))
-                    self.add_symbol(s)
-
-        self.axioms[where].add(formula)
-
-
-    def print_vocabulary(self):
-        print("Vocabulary of theory '{}':".format(self.name))
-        for s_n, s in self.vocabulary.items():
-            print("  \t{}".format(str(s)))
-
 
 class Sitcalc(object):
     """ Stores common sitcalc symbols and terms """
-    def __init__(self):
+    # Formerly known as self.special_symbols
+    sym = {}
+    # Formerly known as self.special_terms
+    term = {}
 
-        self.special_symbols = {
+    def __populate__():
+        Sitcalc.sym = {
+            "S_0" : Symbol("S_0", sort="situation"),
+            "a" : Symbol("a", sort="action", is_var=True),
+            "s" : Symbol("s", sort="situation", is_var=True),
             "do" : Symbol("do", sort="situation", sorts=["action", "situation"]),
             "Poss" : Symbol("Poss", sorts=["action", "situation"]),
-            }
+        }
 
-        self.special_terms = {
-            "S_0" : Term(Symbol("S_0", sort="situation")),
-            "a" : Term(Symbol("a", sort="action", is_var=True)),
-            "s" : Term(Symbol("s", sort="situation", is_var=True)),
-            }
+        Sitcalc.term = {
+            "S_0" : SitTerm(Sitcalc.sym["S_0"]),
+            "a" : Term(Sitcalc.sym["a"]),
+            "s" : SitTerm(Sitcalc.sym["s"]),
+        }
+        Sitcalc.term["do(a,s)"] = SitTerm(Sitcalc.sym["do"], Sitcalc.term["a"], Sitcalc.term["s"])
 
-        self.special_terms["do(a,s)"] = Term(self.special_symbols["do"], self.special_terms["a"], self.special_terms["s"])
+
+class SitTerm(Term): #
+    """ A situation term; can be any one of:
+            - a variable of sort situation,
+            - constant S_0
+            - any term build using do(-,-)
+        The whole point of this class is to encapsulate situation-specific operations without
+        cluttering up pure FOL notions with situation calculus
+    """
+    def __init__(self, symbol, *args):
+        if not symbol.sort=="situation":
+            raise TypeError("To create a situation term, symbol must be of sort situation.")
+        if not symbol.is_var and not symbol==Sitcalc.sym["S_0"] and not symbol==Sitcalc.sym["do"]:
+            raise TypeError(f"Cannot create a situation term out of symbol {symbol}")
+        Term.__init__(self, symbol, *args)
+
+    def previous_sit(self):
+        """ returns the immediately previous situation, if possible """
+        if self.is_var or self.symbol == Sitcalc.sym["S_0"]:
+            return None
+        return self.args[1]
 
 
 class Axiom(object):
@@ -117,23 +54,21 @@ class Axiom(object):
         # Every axiom has a formula
         self.formula = None
 
-        # The Axiom class provides a way to build said formula
 
-class InitAxiom(Axiom, Sitcalc):
+class InitAxiom(Axiom):
     """ Any FOL sentence uniform in S_0 """
     def __init__(self, formula):
         Axiom.__init__(self)
-        Sitcalc.__init__(self)
         if not formula.is_sentence():
             raise Exception(f"Init axiom must be a sentence, and this isn't: {formula.tex()}")
-        if not formula.uniform_in(self.special_terms["S_0"]):
+        if not formula.uniform_in(Sitcalc.term["S_0"]):
             raise Exception("Init axiom must be uniform in S_0")
         self.formula = formula
         for t in formula.terms():
             print(f"Term: {t.tex()}")
 
 
-class APA(Axiom, Sitcalc):
+class APA(Axiom):
     """ An action precondition axiom in regular situation calculus.
         defined by:
           A formula of the form Poss(A(x),s) <-> Pi_A(x,s)
@@ -145,9 +80,8 @@ class APA(Axiom, Sitcalc):
     """
     def __init__(self, action_term, rhs=Tautology()):
         Axiom.__init__(self)
-        Sitcalc.__init__(self)
         self.action = action_term.symbol
-        self.poss_atom = Atom(self.special_symbols["Poss"], action_term, self.special_terms["s"])
+        self.poss_atom = Atom(Sitcalc.sym["Poss"], action_term, Sitcalc.term["s"])
         self.rhs = rhs
         for rhs_var in rhs.free_vars():
             if rhs_var not in self.poss_atom.free_vars():
@@ -160,15 +94,13 @@ class APA(Axiom, Sitcalc):
         self.formula = f.close()
 
 
-
-class SSA(Axiom, Sitcalc):
+class SSA(Axiom):
     """ Common to all SSA: form
         \\forall \\bar{x} \\forall a \forall s ([Atom(\bar{x}, do(a,s))] <-> Phi(\bar{x},a,s))
         Atom is either a relational fluent atom or an equality about a functional fluent and variable y (part of \bar{x} in form above)
     """
     def __init__(self):
         Axiom.__init__(self)
-        Sitcalc.__init__(self)
 
 class RelSSA(SSA):
     """ Successor state axiom for a relational fluent
@@ -191,21 +123,20 @@ class RelSSA(SSA):
             if v.sort != "object":
                 raise TypeError("Fluent object arguments must be of sort object")
 
-        self.a_var = self.special_terms['a']
-        self.s_var = self.special_terms['s']
+        self.a_var = Sitcalc.term['a']
+        self.s_var = Sitcalc.term['s']
         # Create universally quantified variables
-        lhs_atom_args = obj_vars + [self.special_terms['do(a,s)']]
-        rhs_atom_args = obj_vars + [self.special_terms['s']]
+        lhs_atom_args = obj_vars + [Sitcalc.term['do(a,s)']]
+        rhs_atom_args = obj_vars + [Sitcalc.term['s']]
 
         self.obj_vars = obj_vars
-        self.univ_vars = obj_vars + [self.special_terms['a'], self.special_terms['s']]
+        self.univ_vars = obj_vars + [Sitcalc.term['a'], Sitcalc.term['s']]
         self.lhs = Atom(symbol, *lhs_atom_args)
         self.frame_atom = Atom(symbol, *rhs_atom_args)
         self.pos_effects = []
         self.neg_effects = []
         self.formula = None # this is just to indicate where the formula can be found
         self._build_formula() # reconcile bits into one formula
-
 
     def _build_formula(self):
         p_eff = Or(*self.pos_effects)
@@ -259,7 +190,6 @@ class RelSSA(SSA):
     def add_pos_effect(self, action, context=Tautology()):
         self._add_effect(action, context, positive=True)
 
-
     def add_neg_effect(self, action, context=Tautology()):
         self._add_effect(action, context, positive=False)
 
@@ -293,12 +223,12 @@ class FuncSSA(SSA):
                 raise TypeError("Fluent object arguments must be of sort object")
 
         # Remember the important standard symbols for easy access
-        self.a_var = self.special_terms['a']
-        self.s_var = self.special_terms['s']
+        self.a_var = Sitcalc.term['a']
+        self.s_var = Sitcalc.term['s']
 
         # Create universally quantified variables for the fluent eq-atom on both sides
-        self.lhs_atom_args = obj_vars + [self.special_terms['do(a,s)']]
-        self.rhs_atom_args = obj_vars + [self.special_terms['s']]
+        self.lhs_atom_args = obj_vars + [Sitcalc.term['do(a,s)']]
+        self.rhs_atom_args = obj_vars + [Sitcalc.term['s']]
 
 
         # The RHS of equality, the distinguished y and y' variables
@@ -314,7 +244,7 @@ class FuncSSA(SSA):
         # \bar{x} - just the object argument variables
         self.obj_vars = obj_vars
         # All implicitly quantified variables
-        self.univ_vars = obj_vars + [self.y, self.special_terms['a'], self.special_terms['s']]
+        self.univ_vars = obj_vars + [self.y, Sitcalc.term['a'], Sitcalc.term['s']]
 
         # Build the actual func. fluent terms
         self.lhs_fluent = Term(symbol, *self.lhs_atom_args)
@@ -335,31 +265,11 @@ class FuncSSA(SSA):
         # Do what then? Get a plain FOL version from self.formula and do whatever
 
     def _build_formula(self):
-        print("\nWill build formula from effects")
         effects_copy = copy.deepcopy(self.effects)
-        print(f"Effects copied. Check: {len(self.effects)} == {len(effects_copy)}")
-        #effects_copy = [copy.deepcopy(e) for e in self.effects]
-        for e in self.effects:
-            print(f"    (+): {e.tex()}", e)
-        for e in effects_copy:
-            print(f"    (-): {e.tex()}", e)
-        print("(end of listing)")
 
         p_eff = Or(*self.effects)
-
-        # Protection from side effects of substitution
-        # Maybe make all term methods return-only, like .simplified()?
-
         n_eff = Or(*effects_copy)
-        print(f"    (-) {n_eff.tex()}")
         n_eff.replace_term(self.y, self.y_) # Replace y by y'
-        print(f"    (-) same, y/y': {n_eff.tex()}")
-
-        print("\nAll effects are now ready")
-        print("Positive: ", p_eff.tex())
-        #p_eff.describe()
-        print("Negative: ", n_eff.tex())
-        #n_eff.describe()
 
         frame = And(self.frame_atom, Neg(Exists(self.y_, n_eff)))
         rhs = Or(p_eff, frame)
@@ -372,7 +282,6 @@ class FuncSSA(SSA):
         self.formula = quantified.simplified()
 
         if not self.formula.is_sentence():
-            #self.formula.describe()
             raise Exception("Resulting SSA is not a sentence. Perhaps an extra var in effects?")
 
     def _effect_type_check(self, action, context):
@@ -393,12 +302,12 @@ class FuncSSA(SSA):
             (a=action_name(\bar{x}) \land \Phi(\bar{x},s))
             EFFECT MUST MENTION y!!!!!!!!
         """
-        print(f"Adding effect: action is {action.tex()}, context is {context.tex()}")
+        #print(f"Adding effect: action is {action.tex()}, context is {context.tex()}")
         self._effect_type_check(action, context)
         eq = EqAtom(self.a_var, action)
         effect = And(eq, context)
-        print(f"Becomes a formula: {effect.tex()}")
-        effect.describe()
+        #print(f"Becomes a formula: {effect.tex()}")
+        #effect.describe()
         # All vars not occurring on LHS will get existentially quantified
         # all except the special variable y
         for v in set(effect.free_vars()):
@@ -407,13 +316,12 @@ class FuncSSA(SSA):
 
         effect = effect.simplified()
 
-        print(f"Add existentials and simplify: {effect.tex()}")
+        #print(f"Add existentials and simplify: {effect.tex()}")
 
         if not effect.uniform_in(self.s_var):
             raise Exception(f"Effect {effect.tex()} not uniform in s!")
         if self.y not in effect.free_vars():
             raise Exception("Effect does not have a free 'y' variable!")
-
 
         self.effects.append(effect)
         self._build_formula()
@@ -425,19 +333,56 @@ class FuncSSA(SSA):
         return self.formula.tex()
 
 
-class BasicActionTheory(Theory, Sitcalc):
+class BasicActionTheory(Theory):
     """ Predetermined sorts and general syntactic form:
         \\Sigma, D_{ap}, D_{ss}, D_{una}, D_{S_0} """
     def __init__(self, name):
-        Sitcalc.__init__(self)
         Theory.__init__(self, name, sorts=["action", "situation"], subsets=["S_0", "ss", "ap"]) # una and \Sigma are standard
         self.actions = [] # keeps track of all action symbols included in the theory
 
+    def is_regressable_to(self, w, rootsit):
+        """ Returns true iff formula is regressable to rootsit as per defn. 10 in thesis:
+            1. each sit term in formula has form do([a1, ..., an], rootsit)
+            2. for each Poss(a, s), a is a term built from an action symbol (not a variable)
+            3. no equality or order on situations (prohibited by design, see class EqAtom)
+        """
+        # Each term is a known number of actions away in the future from sitterm
+        for sigma in w.terms(sort="situation"):
+            print("Encountered sit. term", sigma)
+
+            skip = True # skip if sigma is a sub-situation and not a stand-alone argument of an atom
+            for atom in w.atoms():
+                if sigma in atom.args:
+                    skip = False
+                    print(f"Found {sigma} in atom {atom.tex()}")
+            if skip:
+                print("This term does not occur as a stand-alone argument, skipping")
+                continue
+
+            s = sigma
+            prev = s.previous_sit()
+            while True:
+                print(s, "==", rootsit, "is", s==rootsit)
+                if s == rootsit: # Found root
+                    print("Leaving the loop")
+                    break # regressable by point 1, continue onto point 2
+                elif prev is not None: # didn't find root, but can go further back
+                    s = prev # get previous situation
+                    prev = s.previous_sit()
+                else: # All out of ideas
+                    return False
+
+        # Each poss atom (if any) has a non-variable action
+        for atom in w.atoms():
+            if atom.symbol == Sitcalc.sym["Poss"]:
+                print("Found a POSS ATOM!!!")
+                if atom.args[0].is_var or not atom.args[0].symbol in self.actions: # first atom is variable or some unknown thing
+                    return False
+
+        return True # If reached this point, all checks are passed
 
     def add_axiom(self, formula, force=False, where="default"):
         raise Exception("Don't do this. Use specialized methods.")
-
-    #def uniform_in(self.)
 
     def add_init_axiom(self, axiom, force=False):
         # check if it's a sentence uniform in S_0
@@ -450,7 +395,6 @@ class BasicActionTheory(Theory, Sitcalc):
         """
             APA define the actions of the theory. Upon adding an APA, also take an internal note of the action name.
         """
-        # Check if it's a proper Poss axiom
         if not isinstance(axiom, APA):
             raise Exception("Not a proper APA, cannot add to theory")
         elif axiom.action in self.actions:
@@ -461,8 +405,7 @@ class BasicActionTheory(Theory, Sitcalc):
 
 
     def add_ss_axiom(self, formula, force=False):
-        # Check if it's a proper ssa
-        if (isinstance(formula, RelSSA) or isinstance(formula, FuncSSA)): # and formula.finalized: # Correct class implies finalized
+        if (isinstance(formula, RelSSA) or isinstance(formula, FuncSSA)):
             self.axioms["ss"].add(formula)
         else:
             raise Exception("Not a proper SSA, cannot add to theory")
@@ -519,3 +462,6 @@ class HybridTheory(BasicActionTheory):
     """ Adds new axiom class: D_{sea} """
     def __init__(self, name):
         Theory.__init__(self, name)
+
+
+Sitcalc.__populate__()
