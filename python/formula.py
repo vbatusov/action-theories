@@ -1,4 +1,5 @@
 import copy
+from colorama import Fore, Back, Style
 
 class Symbol:
     """ A symbol is always a part of a theory.
@@ -165,11 +166,20 @@ class Term(Struct): #
             yield from arg.terms()
 
     def tex(self):
+        # colours
+        functor = self.symbol.name
+        if self.symbol.is_var:
+            functor = Fore.RED + self.symbol.name + Style.RESET_ALL
+        else:
+            functor = Fore.GREEN + self.symbol.name + Style.RESET_ALL
+        if self.symbol.sort == "situation":
+            functor = Back.BLUE + Style.BRIGHT + functor + Style.RESET_ALL
+
         if self.symbol.infix: # binary, already checked
-            return self.name.join([arg.tex() for arg in self.args])
+            return functor.join([arg.tex() for arg in self.args])
         if self.arity == 0:
-            return self.name
-        return "{}({})".format(self.symbol.name, ", ".join([arg.tex() for arg in self.args]))
+            return functor
+        return "{}({})".format(functor, ", ".join([arg.tex() for arg in self.args]))
 
     def __hash__(self):
         return f"Term {self.tex()}".__hash__()
@@ -196,6 +206,27 @@ class Formula(object):
         # this works, which is pretty cool, since the methods invoked
         # here exist only in subclasses of Formula
 
+    def open(self):
+        """ Returns whatever the current formula contains under the leading universal quantifiers """
+        if not self.is_sentence():
+            raise Exception("Suppressing quantifiers in an open formula makes no sense. How are you going to distinguish between free variables and the universally quantified ones?")
+        if not isinstance(self, Forall):
+            raise Exception("Not a universally-quantified sentence.")
+        formula = self
+        while isinstance(formula, Forall):
+            formula = formula.formula  # Dig through quantifiers
+        return formula
+
+    def close(self):
+        formula = self
+        if self.is_sentence():
+            pass
+            #raise Exception("Can't quantify a sentence") -- no need to fail here
+        else:
+            for var in self.free_vars():
+                formula = Forall(var, formula)
+        return formula
+
     def vars(self):
         yield from []
 
@@ -212,16 +243,7 @@ class Formula(object):
     def tex(self):
         return ""
 
-    def suppress_forall(self):
-        """ Returns whatever the current formula contains under the leading universal quantifiers """
-        if not self.is_sentence:
-            raise Exception("Suppressing quantifiers in an open formula makes no sense. How are you going to distinguish between free variables and the universally quantified ones?")
-        if not isinstance(self, Forall):
-            raise Exception("Not a universally-quantified sentence.")
-        formula = self
-        while isinstance(formula, Forall):
-            formula = formula.formula  # Dig through quantifiers
-        return formula
+
 
     def is_sentence(self):
         return not [v for v in self.free_vars()]
@@ -276,13 +298,19 @@ class Atom(Formula, Struct):
         return # It's an atom
         yield
 
+    def terms(self):
+        for arg in self.args:
+            yield from arg.terms()
+
     def replace_term(self, term, new_term):
         """ Use Struct's, and not Formula's, because Atom inherits from both"""
         Struct.replace_term(self, term, new_term)
 
     def tex(self):
+        functor = Fore.CYAN + self.symbol.name + Style.RESET_ALL
+
         if len(self.args) > 0:
-            return "{}({})".format(self.symbol.name, ", ".join([arg.tex() for arg in self.args]))
+            return "{}({})".format(functor, ", ".join([arg.tex() for arg in self.args]))
         return self.symbol.name
 
 class EqAtom(Atom):
@@ -533,7 +561,6 @@ class Quantified(Formula):
         yield from self.formula.terms()
 
     def replace_term(self, term, new_term):
-        #print(f"Quantified {self.var}: replacing {term.tex()} by {new_term.tex()}")
         self.formula.replace_term(term, new_term)
 
     def tex(self, quantifier):
@@ -563,11 +590,6 @@ class Exists(Quantified):
     """ \\exists var (formula) """
     def __init__(self, var, formula):
         Quantified.__init__(self, var, formula)
-
-    # def _deepcopy_(self, memo):
-    #     cp_v = copy.deepcopy(self.var, memo)
-    #     cp_f = copy.deepcopy(self.formula, memo)
-    #     return Exists(cp_v, cp_f)
 
     def simplified(self):
         """ Returns a shallow syntactic simplification of self

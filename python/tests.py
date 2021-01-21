@@ -199,7 +199,7 @@ class FormulaBuilding(unittest.TestCase):
         my_x = Term(Symbol("x", sort="object", is_var=True))
         my_y = Term(Symbol("y", sort="object", is_var=True))
         my_z = Term(Symbol("z", sort="object", is_var=True))
-        myssa = RelSSA(myF, [my_x, my_y], voc=myBAT.vocabulary)
+        myssa = RelSSA(myF, [my_x, my_y])
 
         print("\nNo effects, only frame:")
         myssa.describe()
@@ -249,8 +249,8 @@ class FormulaBuilding(unittest.TestCase):
         height = FuncFluentSymbol("height", sorts=["object"])
         my_y_reals = Term(Symbol("y", sort="reals", is_var=True))
         with self.assertRaises(Exception):
-            myfssa2 = FuncSSA(height, obj_vars=[my_y], voc=myBAT.vocabulary) # Should throw an exception TODO
-        myfssa = FuncSSA(height, obj_vars=[my_x], voc=myBAT.vocabulary)
+            myfssa2 = FuncSSA(height, obj_vars=[my_y]) # Should throw an exception TODO
+        myfssa = FuncSSA(height, obj_vars=[my_x])
         myfssa.describe()
 
         print("\nAdding an effect")
@@ -266,7 +266,7 @@ class FormulaBuilding(unittest.TestCase):
         myfssa.add_effect(a1, And(NP, GF))
         myfssa.describe()
 
-        sup = myfssa.formula.suppress_forall()
+        sup = myfssa.formula.open()
         print("Suppressed: ")
         sup.describe()
 
@@ -277,14 +277,14 @@ class FormulaBuilding(unittest.TestCase):
         d = Term(Symbol("d", sort="object"))
         two = Term(Symbol("2", sort="reals"))
         mult = Term(myBAT.vocabulary["*"], two, t)
-        ht = Term(height, d, myBAT.vocabulary["s"])
+        ht = Term(height, d, myBAT.special_terms["s"])
         sm = Term(myBAT.vocabulary["+"], ht, mult)
         ee = EqAtom(my_y_reals, sm)
         a2 = Term(a2_sym, d, t)
         myfssa.add_effect(a2, ee)
         myfssa.describe()
 
-        sup = myfssa.formula.suppress_forall()
+        sup = myfssa.formula.open()
         print("Suppressed: ")
         sup.describe()
 
@@ -293,8 +293,51 @@ class FormulaBuilding(unittest.TestCase):
         myBAT.add_ss_axiom(myssa)
         myBAT.add_ss_axiom(myfssa)
 
+        myBAT.describe()
 
 
+    def test_BW(self):
+        bat = BasicActionTheory("Blocks World")
+        bat.describe()
+
+        a_s = Symbol("move", sort="action", sorts=["object","object"])
+        x = Term(Symbol("x", sort="object", is_var=True))
+        y = Term(Symbol("y", sort="object", is_var=True))
+        move_x_y = Term(a_s, x, y)
+
+        T = Term(Symbol("T", sort="object"))
+        A = Term(Symbol("A", sort="object"))
+        B = Term(Symbol("B", sort="object"))
+        C = Term(Symbol("C", sort="object"))
+
+        on = Symbol("on", sorts=["object", "object", "situation"])
+        clear = Symbol("clear", sorts=["object", "situation"])
+
+        clear_x_s = Atom(clear, x, bat.special_terms["s"])
+        neq_x_y = Neg(EqAtom(x, y))
+        neq_x_T = Neg(EqAtom(x, T))
+        clear_y_s = Atom(clear, y, bat.special_terms["s"])
+        eq_y_T = EqAtom(y, T)
+        rhs = And(clear_x_s, neq_x_y, neq_x_T, Or(clear_y_s, eq_y_T))
+
+        apa = APA(move_x_y, rhs=rhs)
+        bat.add_ap_axiom(apa)
+        bat.describe()
+
+        init1 = InitAxiom(Atom(on, A, T, bat.special_terms["S_0"]).close())
+        init2 = InitAxiom(Atom(on, C, B, bat.special_terms["S_0"]).close())
+        init3 = InitAxiom(Atom(on, B, T, bat.special_terms["S_0"]).close())
+        init4 = InitAxiom(Atom(clear, A, bat.special_terms["S_0"]).close())
+        init5 = InitAxiom(Atom(clear, C, bat.special_terms["S_0"]).close())
+        init6 = InitAxiom(Neg(Atom(clear, B, bat.special_terms["S_0"]).close()))
+
+        bat.add_init_axiom(init1)
+        bat.add_init_axiom(init2)
+        bat.add_init_axiom(init3)
+        bat.add_init_axiom(init4)
+        bat.add_init_axiom(init5)
+        bat.add_init_axiom(init6)
+        bat.describe()
 
 
 if __name__ == '__main__':
