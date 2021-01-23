@@ -1,5 +1,6 @@
 import copy
 from colorama import Fore, Back, Style
+import random
 
 class Symbol:
     """ A symbol is always a part of a theory.
@@ -103,17 +104,22 @@ class Struct:
             return True
         return False
 
+    def rename(self, name):
+        self.name = name
+        self.symbol.name = name
 
-    def iter_structs(self): # All Atoms and Terms
-        yield self
-        for arg in self.args:
-            for struct in arg.iter_structs():
-                yield struct
+    # Deprecated
+    # def iter_structs(self): # All Atoms and Terms
+    #     yield self
+    #     for arg in self.args:
+    #         for struct in arg.iter_structs():
+    #             yield struct
 
-    def iter_vars(self): # All Terms with is_var
-        for struct in self.iter_structs():
-            if struct.symbol.is_var:
-                yield struct
+    # Deprecated
+    # def iter_vars(self): # All Terms with is_var
+    #     for struct in self.iter_structs():
+    #         if struct.symbol.is_var:
+    #             yield struct
 
     def symbols(self):
         yield self.symbol
@@ -165,6 +171,11 @@ class Term(Struct): #
             yield self
         for arg in self.args:
             yield from arg.terms(sort=sort)
+
+    def vars(self, sort="any"):
+        for t in self.terms(sort=sort):
+            if t.is_var:
+                yield t
 
     def tex(self):
         # colours
@@ -244,14 +255,17 @@ class Formula(object):
                 formula = Forall(var, formula)
         return formula
 
-    def vars(self):
-        yield from []
-
     def nonfree_vars(self):
         yield from []
 
     def terms(self, sort="any"):
         yield from []
+
+    def vars(self, sort="any"):
+        """ This should, in principle, replace the clunky Struct.iter_vars() """
+        for t in self.terms(sort=sort):
+            if t.is_var:
+                yield t
 
     def atoms(self):
         yield from []
@@ -260,18 +274,80 @@ class Formula(object):
         """ Covers the case where substitution is trivial """
         pass
 
+    def apply_substitution(self, old=[], new=[]):
+        """ Produce a new formula which is the result of simultaneously replacing every term in 'old' by
+            the respective term in 'old'. The whole point of this method is to avoid collisions and
+            recursive substitutions.
+            'old' and 'new' must be lists of Term objects
+            'old' must not contain duplicates, because substitution is a function
+            'old' must be all variables (this is essentially unification) (may relax later)
+            This method returns a new formula!
+        """
+        result = copy.deepcopy(self)
+
+        if len(old) != len(new) or len(set(old)) != len(old):
+            raise Exception("Substitution specified incorrectly")
+        for v in old:
+            if not v.is_var:
+                raise Exception("Substitution's 'from' must be variables")
+        for (o,n) in zip(old, new):
+            if o.sort != n.sort:
+                raise Exception("Sort mismatch in substitution")
+        # find all terms (inc. nested) in 'new'
+        #print(f"Source: {', '.join([o.tex() for o in old])}")
+        vars_in_new = set(t for v in new for t in v.vars())
+        #print(f"Vars in new:", "; ".join([t.tex() for t in vars_in_new]))
+        # find which ones are also members of 'old' -> set of collisions
+        vars_in_old = set(old)
+        rhs_vars = set(result.vars())
+        all_vars = vars_in_old.union(vars_in_new.union(rhs_vars))
+        collisions = vars_in_old.intersection(vars_in_new)
+        #print(f"All vars:", "; ".join([t.tex() for t in all_vars]))
+        #print(f"Collisions:", "; ".join([t.tex() for t in collisions]))
+        # for each collision,
+        for c in collisions:
+        #  - generate a fresh name (not in either terms_in_new or old)
+            c_new = copy.deepcopy(c)
+            while c_new in all_vars:
+                #print("Finding name...")
+                c_new.rename(c.name + str(random.randint(1,10000))) # a hack, so what
+            #print(f"Renaming {c.tex()} to {c_new.tex()}")
+        #  - rename variable in 'result'
+            result.replace_term(c, c_new)
+        #  - rename source variable in rule accordingly
+            old = [c_new if v == c else v for v in old]
+        #print(f"RHS copy ready: {result.tex()}")
+        #print(f"Source: {', '.join([o.tex() for o in old])}")
+        # apply the substitutions without fear of messing up
+        for (src, tgt) in zip(old, new):
+            result.replace_term(src, tgt)
+
+        return result
+
     def tex(self):
         return ""
 
-
-
     def is_sentence(self):
         return not [v for v in self.free_vars()]
+
+    # def occurs_standalone(self, term):
+    #     """ True if term occurs alone as an argument of an atom """
+    #     for sigma in self.terms(sort="situation"):
+    #         skip = True # skip if sigma is a sub-situation and not a stand-alone argument of an atom
+    #         for atom in w.atoms():
+    #             if sigma in atom.args:
+    #                 skip = False
+    #         if skip:
+    #             continue
+    #
+    #         s = sigma
+
 
     def uniform_in(self, term):
         """ True iff, in self, every term of sort term.sort is term. """
         for t in self.terms(sort=term.sort):
             if term != t:
+                print(f"Formula {self.tex()} is not uniform in {term.tex()} because it contains term {t.tex()}")
                 return False
         return True
 
@@ -309,10 +385,10 @@ class Atom(Formula, Struct):
 
     # Having free_vars and non_free vars requires duplication of logic
     # Better define vars and nonfree_vars, and get free_vars by difference
-    def vars(self): # generator
-        # All variables in an atom are free
-        for var in self.iter_vars():
-            yield var
+    # def vars(self): # generator
+    #     # All variables in an atom are free
+    #     yield from self.iter_vars()
+    # THis is now handled by Formula's vars which relies on self.terms, which works really well.
 
     def nonfree_vars(self): # generator
         return # It's an atom
@@ -339,6 +415,11 @@ class Atom(Formula, Struct):
 class EqAtom(Atom):
     """ Might have to exclude the = symbol from all theories' vocabularies!
         Might have to look over all conditions that depend on isinstance(_, Atom)!
+
+        Better idea: construct equality atoms in a factory belonging to THEORY.
+        Because the treatment of equality may be theory-specific. *TODO*
+        Actions have UNA; situations should not be equated at all...
+        This class should be theory-agnostic, but it currently isn't
     """
     def __init__(self, *args):
         if len(args) != 2:
@@ -347,9 +428,6 @@ class EqAtom(Atom):
             raise TypeError(f"Cannot equate terms of distinct sorts! {args[0].sort} vs. {args[1].sort}")
         if args[0].sort == "situation":
             raise Exception("Equality between situations is prohibited.")
-
-        #print(f"Constructing EqAtom using {args[0].tex()} and {args[1].tex()}")
-        #print(f"Sorts: args[0] is {args[0].sort}, args[1] is {args[1].sort}")
 
         symbol = Symbol("=", sorts=[args[0].sort]*2) # Might have to exclude this from theory's vocabulary
         Atom.__init__(self, symbol, *args)
@@ -375,9 +453,9 @@ class Neg(Formula): # negation
         else:
             return Neg(f_under_neg)
 
-    def vars(self): # generator
+    def vars(self, sort="any"): # generator
         # All variables in an atom are free
-        yield from self.formula.vars()
+        yield from self.formula.vars(sort=sort)
 
     def nonfree_vars(self): # generator
         yield from self.formula.nonfree_vars()
@@ -410,9 +488,9 @@ class Junction(Formula):
 
         self.formulas = list(formulas)
 
-    def vars(self): # generator
+    def vars(self, sort="any"): # generator
         for f in self.formulas:
-            yield from f.vars()
+            yield from f.vars(sort=sort)
 
     def nonfree_vars(self): # generator
         for f in self.formulas:
@@ -488,7 +566,7 @@ class Or(Junction):
         Junction.__init__(self, *formulas)
 
     def __deepcopy__(self, memo):
-        cp_f = copy.deepcopy(formulas, memo)
+        cp_f = copy.deepcopy(self.formulas, memo)
         return Or(*cp_f)
 
     def simplified(self):
@@ -577,8 +655,8 @@ class Quantified(Formula):
         self.var = var
         self.formula = formula
 
-    def vars(self): # generator
-        yield from self.formula.vars()
+    def vars(self, sort="any"): # generator
+        yield from self.formula.vars(sort=sort)
 
     def nonfree_vars(self): # generator
         yield self.var
@@ -593,7 +671,7 @@ class Quantified(Formula):
 
     def atoms(self):
         yield from self.formula.atoms()
-        
+
     def replace_term(self, term, new_term):
         self.formula.replace_term(term, new_term)
 

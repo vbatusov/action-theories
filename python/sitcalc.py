@@ -25,6 +25,12 @@ class Sitcalc(object):
         Sitcalc.term["do(a,s)"] = SitTerm(Sitcalc.sym["do"], Sitcalc.term["a"], Sitcalc.term["s"])
 
 
+class ActionTerm(Term):
+    def __init__(self, name, *args):
+        """ Can quickly create actions without creating a symbol """
+        arg_sorts = [arg.sort for arg in args]
+        Term.__init__(self, Symbol(name, sort="action", sorts=arg_sorts), *args)
+
 class SitTerm(Term): #
     """ A situation term; can be any one of:
             - a variable of sort situation,
@@ -46,6 +52,21 @@ class SitTerm(Term): #
             return None
         return self.args[1]
 
+    def terms(self, sort="any"):
+        """ Overrides that of Term, only returns top-level sit """
+        if sort == "any" or self.sort == sort:
+            yield self
+
+class PossAtom(Atom):
+    """ Poss atoms are special, all reuse the same symbol and have arg number and sorts.
+        Have additional functionality, too.
+     """
+    def __init__(self, action_arg, sit_arg):
+        if action_arg.sort != "action" or sit_arg.sort != "situation":
+            raise TypeError("Poss atom argument sorts violation")
+        Atom.__init__(self, Sitcalc.sym["Poss"], action_arg, sit_arg)
+        self.action_term = self.args[0]
+        self.sit_term = self.args[1]
 
 class Axiom(object):
     """ An axiom contains a formula, but also has specialized creation mechanisms and ways to maintain its syntactic invariant
@@ -53,6 +74,9 @@ class Axiom(object):
     def __init__(self):
         # Every axiom has a formula
         self.formula = None
+
+    def tex(self):
+        return self.formula.tex()
 
 
 class InitAxiom(Axiom):
@@ -64,8 +88,6 @@ class InitAxiom(Axiom):
         if not formula.uniform_in(Sitcalc.term["S_0"]):
             raise Exception("Init axiom must be uniform in S_0")
         self.formula = formula
-        for t in formula.terms():
-            print(f"Term: {t.tex()}")
 
 
 class APA(Axiom):
@@ -81,7 +103,7 @@ class APA(Axiom):
     def __init__(self, action_term, rhs=Tautology()):
         Axiom.__init__(self)
         self.action = action_term.symbol
-        self.poss_atom = Atom(Sitcalc.sym["Poss"], action_term, Sitcalc.term["s"])
+        self.poss_atom = PossAtom(action_term, Sitcalc.term["s"])
         self.rhs = rhs
         for rhs_var in rhs.free_vars():
             if rhs_var not in self.poss_atom.free_vars():
@@ -93,6 +115,12 @@ class APA(Axiom):
         f = Iff(self.poss_atom, self.rhs).simplified()
         self.formula = f.close()
 
+    def instantiate_rhs(self, poss_atom):
+        """ Returns the right-hand side with variables instantiated as in poss_atom (can assume it's PossAtom)
+        """
+        old_vars = self.poss_atom.action_term.args + [self.poss_atom.sit_term]
+        new_vars = poss_atom.action_term.args + [poss_atom.sit_term] # in exactly the same order
+        return self.rhs.apply_substitution(old_vars, new_vars)
 
 class SSA(Axiom):
     """ Common to all SSA: form
@@ -340,6 +368,18 @@ class BasicActionTheory(Theory):
         Theory.__init__(self, name, sorts=["action", "situation"], subsets=["S_0", "ss", "ap"]) # una and \Sigma are standard
         self.actions = [] # keeps track of all action symbols included in the theory
 
+    def get_apa_by_poss(self, poss_atom):
+        if not isinstance(poss_atom, PossAtom):
+            raise TypeError(f"{poss_atom.tex()} is not a proper PossAtom!")
+        for apa in self.axioms["ap"]:
+            if poss_atom.action_term.symbol == apa.action:
+                return apa
+        return None # maybe warrants raising an exception? Fail loudly, after all.
+
+    def instantiate_ap_rhs(self, poss_atom):
+        """ Find and instantiate wrt poss_atom the RHS of the matching APA"""
+        return self.get_apa_by_poss(poss_atom).instantiate_rhs(poss_atom)
+
     def is_regressable_to(self, w, rootsit):
         """ Returns true iff formula is regressable to rootsit as per defn. 10 in thesis:
             1. each sit term in formula has form do([a1, ..., an], rootsit)
@@ -348,23 +388,17 @@ class BasicActionTheory(Theory):
         """
         # Each term is a known number of actions away in the future from sitterm
         for sigma in w.terms(sort="situation"):
-            print("Encountered sit. term", sigma)
-
-            skip = True # skip if sigma is a sub-situation and not a stand-alone argument of an atom
-            for atom in w.atoms():
-                if sigma in atom.args:
-                    skip = False
-                    print(f"Found {sigma} in atom {atom.tex()}")
-            if skip:
-                print("This term does not occur as a stand-alone argument, skipping")
-                continue
+            # skip = True # skip if sigma is a sub-situation and not a stand-alone argument of an atom
+            # for atom in w.atoms():
+            #     if sigma in atom.args:
+            #         skip = False
+            # if skip:
+            #     continue
 
             s = sigma
             prev = s.previous_sit()
             while True:
-                print(s, "==", rootsit, "is", s==rootsit)
                 if s == rootsit: # Found root
-                    print("Leaving the loop")
                     break # regressable by point 1, continue onto point 2
                 elif prev is not None: # didn't find root, but can go further back
                     s = prev # get previous situation
@@ -374,9 +408,8 @@ class BasicActionTheory(Theory):
 
         # Each poss atom (if any) has a non-variable action
         for atom in w.atoms():
-            if atom.symbol == Sitcalc.sym["Poss"]:
-                print("Found a POSS ATOM!!!")
-                if atom.args[0].is_var or not atom.args[0].symbol in self.actions: # first atom is variable or some unknown thing
+            if isinstance(atom, PossAtom):
+                if atom.action_term.is_var or not atom.action_term.symbol in self.actions: # first arg is variable or some unknown thing
                     return False
 
         return True # If reached this point, all checks are passed
@@ -411,6 +444,12 @@ class BasicActionTheory(Theory):
             raise Exception("Not a proper SSA, cannot add to theory")
 
     def rho(self, w, sitterm):
+        """ Safe regression: check for regressability first """
+        if not self.is_regressable_to(w, sitterm):
+           raise Exception(f"Formula {w.tex()} is not regressable to {sitterm}")
+        return self._rho(w, sitterm)
+
+    def _rho(self, w, sitterm, depth=0):
         """ Implements \\rho_{sitterm}[formula], the Partial Regression Operator from Definition 11.
             In:
               w: a sitcalc formula (hopefully regressable to sitterm (Defn. 10), will check in code)
@@ -418,25 +457,31 @@ class BasicActionTheory(Theory):
             Out:
               a new formula, which is the result of regressing given formula bacwards to sitterm using the SSA and APA owned by self.
         """
-        #if not w.regressable_to(sitterm):
-        #    raise Exception(f"Formula {w.tex()} is not regressable to {sitterm}")
-        # Maybe raise this exception when an actual problem is encountered? THis way, don't need to implement the check twice.
-
+        prefix = "  "*depth
+        print(f"{prefix}Regressing {w.tex()} to term {sitterm.tex()}")
         if isinstance(w, Neg):
-            return Neg(self.rho(w.formula, sitterm))
+            print(f"{prefix}Negation, going in...")
+            return Neg(self._rho(w.formula, sitterm, depth=depth+1))
         elif isinstance(w, Junction):
-            return w.__class__(*[self.rho(f, sitterm) for f in w.formulas])
+            print(f"{prefix}Junction, going in...")
+            return w.__class__(*[self._rho(f, sitterm, depth=depth+1) for f in w.formulas])
         elif isinstance(w, Quantified):
-            return w.__class__(self.rho(w.formula, sitterm))
+            print(f"{prefix}Quantified, going in...")
+            return w.__class__(self._rho(w.formula, sitterm, depth=depth+1))
         else: # Some sort of an atom
-            if isinstance(w, Atom) and w.symbol == self.vocabulary["Poss"] and not w.args[0].is_var: # Poss with a known action name
-                # Need a better check for action name
-                pass
+            print(f"{prefix}Some sort of an atom...")
+            if isinstance(w, PossAtom):  # More stringent checks are in is_regressable
+                print(f"{prefix}Poss atom! Replacing by rhs!")
+                # instantiate rhs of APA wrt to atom's args, regress that
+                return self._rho(self.instantiate_ap_rhs(w), sitterm, depth=depth+1)
             elif w.uniform_in(sitterm): # Uniform in sitterm
-                return w
-            elif True: # Has a prime func. fluent
+                print(f"{prefix}Uniform in {sitterm}, end of branch.")
+                return w # Terminal clause
+            elif False: # Has a prime func. fluent
+                print(f"{prefix}Func. fluents not implemented")
                 pass # use func. SSA
-            elif True: # Relational fluent atom
+            elif False: # Relational fluent atom
+                print(f"{prefix}Rel. fluents not implemented")
                 pass # use rel. SSA
             else:
                 raise Exception(f"Formula {w} is not regressable to {sitterm}!!")

@@ -308,9 +308,9 @@ class FormulaBuilding(unittest.TestCase):
         x = Term(Symbol("x", sort="object", is_var=True))
         y = Term(Symbol("y", sort="object", is_var=True))
         z = Term(Symbol("z", sort="object", is_var=True))
-        move_x_y = Term(move, x, y)
-        move_y_z = Term(move, y, z)
-        move_y_x = Term(move, y, x)
+        move_x_y = ActionTerm("move", x, y)
+        move_y_z = ActionTerm("move", y, z)
+        move_y_x = ActionTerm("move", y, x)
 
         # Create domain constants
         T = Term(Symbol("T", sort="object"))
@@ -334,6 +334,11 @@ class FormulaBuilding(unittest.TestCase):
         apa = APA(move_x_y, rhs=rhs)
         bat.add_ap_axiom(apa)
         #bat.describe()
+
+        # Add another
+        noop = ActionTerm("noop")
+        bat.add_ap_axiom(APA(noop))
+
 
         # Create and add initial state axioms
         init1 = InitAxiom(EqAtom(Term(on, A, S_0), T).close())
@@ -364,25 +369,63 @@ class FormulaBuilding(unittest.TestCase):
         bat.add_ss_axiom(ssa_on)
         bat.describe()
 
-        # Test regression
-        print("\nTest regression")
+        # Test regressability
+        #print("\nTest regression")
         w = Atom(clear, A, S_0)
         sitterm = S_0
         do_a_s = Sitcalc.term["do(a,s)"]
-
-        #is_reg = bat.is_regressable_to(w, sitterm)
-        #print(f"1 {w.tex()} regressable to {sitterm}? -> {is_reg}")
-
-        #is_reg = bat.is_regressable_to(w, do_a_s)
-        #print(f"2 {w.tex()} regressable to {do_a_s}? -> {is_reg}")
-
+        self.assertTrue(bat.is_regressable_to(w, sitterm))
+        self.assertFalse(bat.is_regressable_to(w, do_a_s))
         w = Atom(clear, A, do_a_s)
-        is_reg = bat.is_regressable_to(w, do_a_s)
-        print(f"3 {w.tex()} regressable to {do_a_s}? -> {is_reg}")
-        #is_reg = bat.is_regressable_to(w, S_0)
-        #print(f"4 {w.tex()} regressable to {S_0}? -> {is_reg}")
-        #is_reg = bat.is_regressable_to(w, s)
-        #print(f"5 {w.tex()} regressable to {s}? -> {is_reg}")
+        self.assertTrue(bat.is_regressable_to(w, do_a_s))
+        self.assertFalse(bat.is_regressable_to(w, S_0))
+        self.assertTrue(bat.is_regressable_to(w, s))
+        w = PossAtom(Sitcalc.term["a"], s)
+        self.assertFalse(bat.is_regressable_to(w, s))
+        w = PossAtom(move_x_y, s)
+        self.assertTrue(bat.is_regressable_to(w, s))
+        self.assertFalse(bat.is_regressable_to(w, S_0))
+
+        # Test APA RHS instantiation
+        w = PossAtom(Term(move, A, B), S_0)
+        irhs = bat.instantiate_ap_rhs(w)
+        print(f"\nInstantiating RHS wrt\n    {w.tex()}\nyields\n    {irhs.tex()}")
+        w = PossAtom(Term(move, A, B), do_a_s)
+        irhs = bat.instantiate_ap_rhs(w)
+        print(f"\nInstantiating RHS wrt\n    {w.tex()}\nyields\n    {irhs.tex()}")
+        w = PossAtom(noop, do_a_s)
+        print(f"\nInstantiating RHS wrt\n    {w.tex()}\nyields\n    {bat.instantiate_ap_rhs(w).tex()}")
+
+        # Test substitution
+        print("\nTest of general substitutions")
+        # A(y,x) [x/f(y), y/x] => A(x,f(y))
+        f_sym = Symbol("f", sort="object", sorts=["object"])
+        f_y = Term(f_sym, y)
+        at = Atom(Symbol("A", sorts=["object", "object"]), y, x)
+        #src = [x,y]
+        src = [x,y]
+        tgt = [f_y, x]
+        print(f"Source: {at.tex()}")
+        srctex = [v.tex() for v in src]
+        tgttex = [v.tex() for v in tgt]
+        subs = ", ".join([f"{s}/{t}" for (s,t) in zip(srctex, tgttex)])
+        print(f"Substitution: ({subs})")
+        at2 = at.apply_substitution(src, tgt)
+        print(f"Result 1: {at2.tex()}")
+        at2 = at2.apply_substitution(src, tgt)
+        print(f"Result 2: {at2.tex()}")
+        at2 = at2.apply_substitution(src, tgt)
+        print(f"Result 3: {at2.tex()}")
+
+        # Test regression
+        print(f"\nTesting regression of Poss atoms")
+        # APA only
+        w = PossAtom(Term(move, A, B), do_a_s)
+        print(f"Is {w.tex()} regressable to {do_a_s.tex()}? -> {bat.is_regressable_to(w, do_a_s)}")
+        regr = bat.rho(w, do_a_s)
+        print(f"Result: {regr.tex()}")
+        # works. Now, implement full regression (add func and rel SSA)
+
 
         # Implement BAT.situations() to iterate through the entire infinite tree of situations
         # Finish regression and test on a ground situation term
