@@ -1,35 +1,21 @@
 from fol import *
 from colorama import Fore, Back, Style  # Pretty printing
 
-class Sitcalc(object):
-    """ Stores common sitcalc symbols and terms """
-    # Formerly known as self.special_symbols
-    sym = {}
-    # Formerly known as self.special_terms
-    term = {}
 
-    def __populate__():
-        Sitcalc.sym = {
-            "S_0" : Symbol("S_0", sort="situation"),
-            "a" : Symbol("a", sort="action", is_var=True),
-            "s" : Symbol("s", sort="situation", is_var=True),
-            "do" : Symbol("do", sort="situation", sorts=["action", "situation"]),
-            "Poss" : Symbol("Poss", sorts=["action", "situation"]),
-        }
+class UConst(Term):
+    """ A constant (0-ary function) with a unique name """
+    def __init__(self, name, sort="object"):
+        Term.__init__(self, Symbol(name, sort=sort, unique_name=True))
 
-        Sitcalc.term = {
-            "S_0" : SitTerm(Sitcalc.sym["S_0"]),
-            "a" : Term(Sitcalc.sym["a"]),
-            "s" : SitTerm(Sitcalc.sym["s"]),
-        }
-        Sitcalc.term["do(a,s)"] = SitTerm(Sitcalc.sym["do"], Sitcalc.term["a"], Sitcalc.term["s"])
-
+class ObjVar(Term):
+    def __init__(self, name):
+        Term.__init__(self, Symbol(name, sort="object", is_var=True))
 
 class ActionTerm(Term):
     def __init__(self, name, *args):
         """ Can quickly create actions without creating a symbol """
         arg_sorts = [arg.sort for arg in args]
-        Term.__init__(self, Symbol(name, sort="action", sorts=arg_sorts), *args)
+        Term.__init__(self, Symbol(name, sort="action", sorts=arg_sorts, unique_name=True), *args)
 
 class SitTerm(Term): #
     """ A situation term; can be any one of:
@@ -42,20 +28,37 @@ class SitTerm(Term): #
     def __init__(self, symbol, *args):
         if not symbol.sort=="situation":
             raise TypeError("To create a situation term, symbol must be of sort situation.")
-        if not symbol.is_var and not symbol==Sitcalc.sym["S_0"] and not symbol==Sitcalc.sym["do"]:
+        if not symbol.is_var and not symbol==SYM["S_0"] and not symbol==SYM["do"]:
             raise TypeError(f"Cannot create a situation term out of symbol {symbol}")
         Term.__init__(self, symbol, *args)
 
     def previous_sit(self):
         """ returns the immediately previous situation, if possible """
-        if self.is_var or self.symbol == Sitcalc.sym["S_0"]:
+        if self.is_var or self.symbol == SYM["S_0"]:
             return None
         return self.args[1]
 
+    def last_action(self):
+        """ returns the last action, if possible """
+        if self.is_var or self.symbol == SYM["S_0"]:
+            return None
+        return self.args[0]
+
     def terms(self, sort="any"):
-        """ Overrides that of Term, only returns top-level sit """
+        """ Overrides that of Term, only returns top-level sit
+            This is a sort of a hack introduced to make work the notion of "regressable to sigma".
+            This may mess things up. If it does, consider removing this hack
+            and implementing said notion using the following (different) definition:
+              \phi is regressable to sigma if, when all occurrences of sigma are simultaneously replaced by S_0,
+              the result is simply regressable (as per Reiter)
+            Currently, this implementation requires that ACTIONS NOT CARRY FLUENTS IN ARGUMENTS!!!!
+        """
         if sort == "any" or self.sort == sort:
             yield self
+
+class Do(SitTerm):
+    def __init__(self, action_term, sit_term):
+        SitTerm.__init__(self, SYM["do"], action_term, sit_term)
 
 class PossAtom(Atom):
     """ Poss atoms are special, all reuse the same symbol and have arg number and sorts.
@@ -64,9 +67,59 @@ class PossAtom(Atom):
     def __init__(self, action_arg, sit_arg):
         if action_arg.sort != "action" or sit_arg.sort != "situation":
             raise TypeError("Poss atom argument sorts violation")
-        Atom.__init__(self, Sitcalc.sym["Poss"], action_arg, sit_arg)
+        Atom.__init__(self, SYM["Poss"], action_arg, sit_arg)
         self.action_term = self.args[0]
         self.sit_term = self.args[1]
+
+# deprecated
+# class RelFluentSymbol(Symbol):
+#     """ Must have situation as last arg. sort"""
+#     def __init__(self, name, sorts=[]): # sorts don't include sit term at the end
+#         if "situation" in sorts:
+#             raise Exception("Cannot have a second situation term in a relational fluent")
+#         Symbol.__init__(self, name, sorts=sorts+["situation"])
+#         self.type = "relational fluent"
+
+
+class Fluent(object):
+    """ Generic class, do not instantiate """
+    def __init__(self, name, *args): # args include the situation argument, too
+        arg_sorts = [o.sort for o in args]
+        self.obj_args = args[:-1]
+        self.sit_arg = args[-1]
+        if (len(arg_sorts) > 1 and "situation" in arg_sorts[:-1]) or arg_sorts[-1] != "situation":
+            raise Exception("A Fluent must have exactly one sit. argument, which must be at the end.")
+        self.arg_sorts = arg_sorts
+
+class RelFluent(Atom, Fluent):
+    """ Relational fluent atom
+        creates symbol internally; infers sorts from object arguments
+    """
+    def __init__(self, name, *args):
+        Fluent.__init__(self, name, *args)
+        Atom.__init__(self, Symbol(name, sorts=self.arg_sorts), *args)
+
+class FuncFluent(Term, Fluent):
+    def __init__(self, name, sort, *args):
+        Fluent.__init__(self, name, *args)
+        Term.__init__(self, Symbol(name, sorts=self.arg_sorts, sort=sort), *args)
+
+class ObjFluent(FuncFluent):
+    # ObjFluent("on", A, S_0)
+    def __init__(self, name, *args):
+        FuncFluent.__init__(self, name, "object", *args)
+
+# deprecated
+# class FuncFluentSymbol(Symbol):
+#     """ Must have situation as last arg. sort
+#         For now, let the sort be reals-only
+#     """
+#     def __init__(self, name, sorts=[], sort="reals"): # sorts don't include sit term at the end
+#         if "situation" in sorts:
+#             raise Exception("Cannot have a second situation term in a relational fluent")
+#         Symbol.__init__(self, name, sorts=sorts+["situation"], sort=sort)
+#         self.type = "functional fluent"
+
 
 class Axiom(object):
     """ An axiom contains a formula, but also has specialized creation mechanisms and ways to maintain its syntactic invariant
@@ -85,7 +138,7 @@ class InitAxiom(Axiom):
         Axiom.__init__(self)
         if not formula.is_sentence():
             raise Exception(f"Init axiom must be a sentence, and this isn't: {formula.tex()}")
-        if not formula.uniform_in(Sitcalc.term["S_0"]):
+        if not formula.uniform_in(TERM["S_0"]):
             raise Exception("Init axiom must be uniform in S_0")
         self.formula = formula
 
@@ -103,7 +156,7 @@ class APA(Axiom):
     def __init__(self, action_term, rhs=Tautology()):
         Axiom.__init__(self)
         self.action = action_term.symbol
-        self.poss_atom = PossAtom(action_term, Sitcalc.term["s"])
+        self.poss_atom = PossAtom(action_term, TERM["s"])
         self.rhs = rhs
         for rhs_var in rhs.free_vars():
             if rhs_var not in self.poss_atom.free_vars():
@@ -133,34 +186,32 @@ class SSA(Axiom):
 class RelSSA(SSA):
     """ Successor state axiom for a relational fluent
         Custom-form FOL formula for Basic Action Theories
-        Constructor only takes a relational fluent symbol and terms for variables (excluding situation arg)
+        Constructor only takes a relational fluent (ignores situation arg)
         The RHS is constructed sequentially by adding positive and negative effects
     """
-    def __init__(self, symbol, obj_vars=[]):
+    #def __init__(self, symbol, obj_vars=[]):
+    def __init__(self, fluent):
         """ Classic Reiter's SSA
             F(\\bar{x}, do(a,s)) \liff [disj. of pos. effects] \lor F(\bar{x}, s)
               \land \neg [disj. of neg. effects]
-            obj_vars are the \\bar{x}
         """
         SSA.__init__(self)
         # Must maintain the pieces and the total formula in sync!
-        if not isinstance(symbol, RelFluentSymbol):
+        if not isinstance(fluent, RelFluent):
             raise Exception("A relational SSA must be about a relational fluent")
 
-        for v in obj_vars:
-            if v.sort != "object":
-                raise TypeError("Fluent object arguments must be of sort object")
-
-        self.a_var = Sitcalc.term['a']
-        self.s_var = Sitcalc.term['s']
+        self.a_var = TERM['a']
+        self.s_var = TERM['s']
         # Create universally quantified variables
-        lhs_atom_args = obj_vars + [Sitcalc.term['do(a,s)']]
-        rhs_atom_args = obj_vars + [Sitcalc.term['s']]
+        lhs_atom_args = fluent.obj_args + (TERM['do(a,s)'],)
+        rhs_atom_args = fluent.obj_args + (TERM['s'],)
 
-        self.obj_vars = obj_vars
-        self.univ_vars = obj_vars + [Sitcalc.term['a'], Sitcalc.term['s']]
-        self.lhs = Atom(symbol, *lhs_atom_args)
-        self.frame_atom = Atom(symbol, *rhs_atom_args)
+        #self.obj_vars = obj_vars
+        self.lhs = RelFluent(fluent.name, *lhs_atom_args)
+        print(f"CREATING SSA LHS: {self.lhs.args}")
+        self.rhs = None # Will be built in _build_formula()
+        self.univ_vars = self.lhs.obj_args + (TERM['a'], TERM['s'],)
+        self.frame_atom = RelFluent(fluent.name, *rhs_atom_args)
         self.pos_effects = []
         self.neg_effects = []
         self.formula = None # this is just to indicate where the formula can be found
@@ -171,6 +222,7 @@ class RelSSA(SSA):
         n_eff = Or(*self.neg_effects)
         frame = And(self.frame_atom, Neg(n_eff))
         rhs = Or(p_eff, frame)
+        self.rhs = rhs
         iff = Iff(self.lhs, rhs)
 
         quantified = iff
@@ -221,6 +273,14 @@ class RelSSA(SSA):
     def add_neg_effect(self, action, context=Tautology()):
         self._add_effect(action, context, positive=False)
 
+    def instantiate_rhs(self, fluent_atom):
+        #printd("SUBSTITUION*************")
+        old_vars = self.lhs.args[:-1] + [self.lhs.args[-1].last_action(), self.lhs.args[-1].previous_sit()]
+        new_vars = fluent_atom.args[:-1] + [fluent_atom.args[-1].last_action(), fluent_atom.args[-1].previous_sit()]
+        #print(", ".join([o.tex() for o in old_vars]))
+        #print(", ".join([o.tex() for o in new_vars]))
+        return self.rhs.apply_substitution(old_vars, new_vars)
+
     def describe(self):
         self.formula.describe()
 
@@ -232,10 +292,11 @@ class RelSSA(SSA):
 class FuncSSA(SSA):
     """ Successor state axiom for a functional fluent
         Custom-form FOL formula for Basic Action Theories
-        Constructor only takes a functional fluent symbol and terms for variables
+        Constructor only takes a functional fluent term (ignores sit. argument)
         The RHS is constructed sequentially by adding effects
     """
-    def __init__(self, symbol, obj_vars=[]):
+    #def __init__(self, symbol, obj_vars=[]):
+    def __init__(self, fluent):
         """ Classic Reiter's SSA
             f(\\bar{x}, do(a,s)) = y \liff [disj. of effects wrt y] \lor y = f(\bar{x}, s)
               \land \neg \exists y' [disj. of effects wrt y']
@@ -243,40 +304,40 @@ class FuncSSA(SSA):
             y and y' are created here, not passed as arguments
         """
         SSA.__init__(self)
-        if not isinstance(symbol, FuncFluentSymbol):
+        if not isinstance(fluent, FuncFluent):
             raise Exception("A functional SSA must be about a functional fluent")
 
-        for v in obj_vars:
-            if v.sort != "object":
-                raise TypeError("Fluent object arguments must be of sort object")
+        # for v in obj_vars:
+        #     if v.sort != "object":
+        #         raise TypeError("Fluent object arguments must be of sort object")
 
         # Remember the important standard symbols for easy access
-        self.a_var = Sitcalc.term['a']
-        self.s_var = Sitcalc.term['s']
+        self.a_var = TERM['a']
+        self.s_var = TERM['s']
 
         # Create universally quantified variables for the fluent eq-atom on both sides
-        self.lhs_atom_args = obj_vars + [Sitcalc.term['do(a,s)']]
-        self.rhs_atom_args = obj_vars + [Sitcalc.term['s']]
+        self.lhs_atom_args = fluent.obj_args + (TERM['do(a,s)'],)
+        self.rhs_atom_args = fluent.obj_args + (TERM['s'],)
 
 
         # The RHS of equality, the distinguished y and y' variables
         # Must check for collisions with object variables and with effect variables (even if quantified?)
-        self.y = Term(Symbol("y", sort=symbol.sort, is_var=True))
-        self.y_ = Term(Symbol("y'", sort=symbol.sort, is_var=True))
+        self.y = Term(Symbol("y", sort=fluent.symbol.sort, is_var=True))
+        self.y_ = Term(Symbol("y'", sort=fluent.symbol.sort, is_var=True))
 
-        if self.y.name in [v.name for v in obj_vars]:
+        if self.y.name in [v.name for v in fluent.obj_args]:
             # This is, in fact, allowed in first-order logic - having two variables of same name but different Sorts
             # However, they will look identical in formulas, so let's rule this out
             raise Exception("Variable 'y' is reserved in functional SSA! Can't use for an argument.")
 
         # \bar{x} - just the object argument variables
-        self.obj_vars = obj_vars
+        self.obj_vars = fluent.obj_args
         # All implicitly quantified variables
-        self.univ_vars = obj_vars + [self.y, Sitcalc.term['a'], Sitcalc.term['s']]
+        self.univ_vars = fluent.obj_args + (self.y, TERM['a'], TERM['s'],)
 
         # Build the actual func. fluent terms
-        self.lhs_fluent = Term(symbol, *self.lhs_atom_args)
-        self.rhs_fluent = Term(symbol, *self.rhs_atom_args)
+        self.lhs_fluent = Term(fluent.symbol, *self.lhs_atom_args)
+        self.rhs_fluent = Term(fluent.symbol, *self.rhs_atom_args)
         # LHS equality
         self.lhs = EqAtom(self.lhs_fluent, self.y)
         # RHS equality
@@ -301,6 +362,7 @@ class FuncSSA(SSA):
 
         frame = And(self.frame_atom, Neg(Exists(self.y_, n_eff)))
         rhs = Or(p_eff, frame)
+        self.rhs = rhs
         iff = Iff(self.lhs, rhs)
 
         quantified = iff
@@ -354,6 +416,12 @@ class FuncSSA(SSA):
         self.effects.append(effect)
         self._build_formula()
 
+    def instantiate_rhs(self, fluent_term, y):
+        """ Plug in fluent's arguments into ssa and y for the y-var on the left, return rhs """
+        old_vars = self.lhs_fluent.args[:-1] + [self.lhs_fluent.args[-1].last_action(), self.lhs_fluent.args[-1].previous_sit(), self.y]
+        new_vars = fluent_term.args[:-1] + [fluent_term.args[-1].last_action(), fluent_term.args[-1].previous_sit(), y]
+        return self.rhs.apply_substitution(old_vars, new_vars)
+
     def describe(self):
         self.formula.describe()
 
@@ -363,10 +431,31 @@ class FuncSSA(SSA):
 
 class BasicActionTheory(Theory):
     """ Predetermined sorts and general syntactic form:
-        \\Sigma, D_{ap}, D_{ss}, D_{una}, D_{S_0} """
+        \\Sigma, D_{ap}, D_{rss} (relational), D_{fss} (functional) D_{una}, D_{S_0}
+    """
     def __init__(self, name):
-        Theory.__init__(self, name, sorts=["action", "situation"], subsets=["S_0", "ss", "ap"]) # una and \Sigma are standard
+        Theory.__init__(self, name, sorts=["action", "situation"], subsets=["S_0", "rss", "fss", "ap"]) # una and \Sigma are standard
         self.actions = [] # keeps track of all action symbols included in the theory
+
+    def fresh_var(self, vars, basename, sort):
+        """ Returns a variable of sort 'sort' named f'{basename}_N' where N is an integer picked such that this name is not in 'vars'"""
+        i = 1
+        while True:
+            var = Term(Symbol(f"{basename}_{{{i}}}", sort=sort, is_var=True))
+            if var not in vars:
+                return var
+            i += 1
+
+    def prime_ffluent(self, w):
+        """ Returns a prime functional fluent mentioned in w (if any)
+            REMINDER: This is not fully implemented. There currently is no actual
+            checking for whether the fluent is prime.
+            But! If we don't nest f.fluents, then every f.fluent is prime.
+        """
+        for t in w.terms():
+            if isinstance(t, FuncFluent):
+                return t
+        return None
 
     def get_apa_by_poss(self, poss_atom):
         if not isinstance(poss_atom, PossAtom):
@@ -376,9 +465,40 @@ class BasicActionTheory(Theory):
                 return apa
         return None # maybe warrants raising an exception? Fail loudly, after all.
 
+    def get_rssa_by_atom(self, fluent_atom):
+        if not isinstance(fluent_atom, RelFluent):
+            raise TypeError(f"{fluent_atom.tex()} is not a proper RelFluent!")
+        printd(f"Searching for relational SSA to match {fluent_atom.tex()}")
+        for rssa in self.axioms["rss"]:
+            printd(f"    {fluent_atom.symbol} vs. {rssa.lhs.symbol}")
+            if fluent_atom.symbol == rssa.lhs.symbol:
+                printd("    SUCCESS!")
+                return rssa
+            printd("    FAIL!")
+        return None # maybe warrants raising an exception? Fail loudly, after all.
+
+    def get_fssa_by_term(self, fluent_term):
+        if not isinstance(fluent_term, FuncFluent):
+            raise TypeError(f"{fluent_term.tex()} is not a proper FuncFluent!")
+        printd(f"Searching for functional SSA to match {fluent_term.tex()}")
+        for fssa in self.axioms["fss"]:
+            printd(f"    {fluent_term.symbol} vs. {fssa.lhs_fluent.symbol}")
+            if fluent_term.symbol == fssa.lhs_fluent.symbol:
+                printd("    SUCCESS!")
+                return fssa
+            printd("    FAIL!")
+        return None # maybe warrants raising an exception? Fail loudly, after all.
+
     def instantiate_ap_rhs(self, poss_atom):
         """ Find and instantiate wrt poss_atom the RHS of the matching APA"""
         return self.get_apa_by_poss(poss_atom).instantiate_rhs(poss_atom)
+
+    def instantiate_rssa_rhs(self, fluent_atom):
+        return self.get_rssa_by_atom(fluent_atom).instantiate_rhs(fluent_atom)
+
+    # self.instantiate_fssa_rhs(prime_fluent, var)
+    def instantiate_fssa_rhs(self, fluent_term, y):
+        return self.get_fssa_by_term(fluent_term).instantiate_rhs(fluent_term, y)
 
     def is_regressable_to(self, w, rootsit):
         """ Returns true iff formula is regressable to rootsit as per defn. 10 in thesis:
@@ -388,13 +508,6 @@ class BasicActionTheory(Theory):
         """
         # Each term is a known number of actions away in the future from sitterm
         for sigma in w.terms(sort="situation"):
-            # skip = True # skip if sigma is a sub-situation and not a stand-alone argument of an atom
-            # for atom in w.atoms():
-            #     if sigma in atom.args:
-            #         skip = False
-            # if skip:
-            #     continue
-
             s = sigma
             prev = s.previous_sit()
             while True:
@@ -438,8 +551,10 @@ class BasicActionTheory(Theory):
 
 
     def add_ss_axiom(self, formula, force=False):
-        if (isinstance(formula, RelSSA) or isinstance(formula, FuncSSA)):
-            self.axioms["ss"].add(formula)
+        if isinstance(formula, RelSSA):
+            self.axioms["rss"].add(formula)
+        elif isinstance(formula, FuncSSA):
+            self.axioms["fss"].add(formula)
         else:
             raise Exception("Not a proper SSA, cannot add to theory")
 
@@ -447,7 +562,7 @@ class BasicActionTheory(Theory):
         """ Safe regression: check for regressability first """
         if not self.is_regressable_to(w, sitterm):
            raise Exception(f"Formula {w.tex()} is not regressable to {sitterm}")
-        return self._rho(w, sitterm)
+        return self._rho(w, sitterm) #.simplified()
 
     def _rho(self, w, sitterm, depth=0):
         """ Implements \\rho_{sitterm}[formula], the Partial Regression Operator from Definition 11.
@@ -458,50 +573,66 @@ class BasicActionTheory(Theory):
               a new formula, which is the result of regressing given formula bacwards to sitterm using the SSA and APA owned by self.
         """
         prefix = "  "*depth
-        print(f"{prefix}Regressing {w.tex()} to term {sitterm.tex()}")
+        printd(f"{prefix}Regressing {w.tex()} to term {sitterm.tex()}")
+
+        prime_fluent = self.prime_ffluent(w)
+
         if isinstance(w, Neg):
-            print(f"{prefix}Negation, going in...")
-            return Neg(self._rho(w.formula, sitterm, depth=depth+1))
+            printd(f"{prefix}Negation, going in...")
+            return Neg(self._rho(w.formula, sitterm, depth=depth+1)) #.simplified()
         elif isinstance(w, Junction):
-            print(f"{prefix}Junction, going in...")
-            return w.__class__(*[self._rho(f, sitterm, depth=depth+1) for f in w.formulas])
+            printd(f"{prefix}Junction, going in...")
+            return w.__class__(*[self._rho(f, sitterm, depth=depth+1) for f in w.formulas]) #.simplified()
         elif isinstance(w, Quantified):
-            print(f"{prefix}Quantified, going in...")
-            return w.__class__(self._rho(w.formula, sitterm, depth=depth+1))
+            printd(f"{prefix}Quantified, going in...")
+            return w.__class__(w.var, self._rho(w.formula, sitterm, depth=depth+1)) #.simplified()
         else: # Some sort of an atom
-            print(f"{prefix}Some sort of an atom...")
+            printd(f"{prefix}Some sort of an atom...")
             if isinstance(w, PossAtom):  # More stringent checks are in is_regressable
-                print(f"{prefix}Poss atom! Replacing by rhs!")
+                printd(f"{prefix}Poss atom! Replacing by rhs!")
                 # instantiate rhs of APA wrt to atom's args, regress that
-                return self._rho(self.instantiate_ap_rhs(w), sitterm, depth=depth+1)
+                return self._rho(self.instantiate_ap_rhs(w), sitterm, depth=depth+1) #.simplified()
             elif w.uniform_in(sitterm): # Uniform in sitterm
-                print(f"{prefix}Uniform in {sitterm}, end of branch.")
-                return w # Terminal clause
-            elif False: # Has a prime func. fluent
-                print(f"{prefix}Func. fluents not implemented")
-                pass # use func. SSA
-            elif False: # Relational fluent atom
-                print(f"{prefix}Rel. fluents not implemented")
-                pass # use rel. SSA
+                printd(f"{prefix}Uniform in {sitterm}, end of branch.")
+                return w #.simplified() # Terminal clause
+            elif prime_fluent is not None: # Has a prime func. fluent
+                printd(f"{prefix}Mentions a prime functional fluent")
+                # In W, replace the fluent by a new variable y_n (1)
+                w2 = copy.deepcopy(w)
+                var = self.fresh_var(w.vars(), "y", prime_fluent.sort)
+                print(f"Will use new \\exists variable {var.tex()}")
+                w2.replace_term(prime_fluent, var)
+                print(f"Replacing fluent by var in query: {w2.tex()}")
+                # instantiate RHS of fluent's ssa with fluent's arguments, inc. variable y_n (2)
+                inst_rhs = self.instantiate_fssa_rhs(prime_fluent, var)
+                print(f"Instantiated RHS: {inst_rhs.tex()}")
+                # return 'exists y_n ((1) \land (2)) '
+                return Exists(var, self._rho(And(inst_rhs, w2), sitterm, depth=depth+1)) # use func. SSA
+            elif isinstance(w, RelFluent): # Relational fluent atom
+                printd(f"{prefix}A relational fluent atom")
+                #raise Exception(f"{prefix}Rel. fluents not implemented")
+                return self._rho(self.instantiate_rssa_rhs(w), sitterm, depth=depth+1) #.simplified()
             else:
-                raise Exception(f"Formula {w} is not regressable to {sitterm}!!")
+                raise Exception(f"Unable to regress {w.tex()} to term {sitterm.tex()}!!")
 
     def describe(self):
+        col = Style.BRIGHT + Fore.YELLOW
+        b = col + "*" + Style.RESET_ALL
         print()
-        print("*"*20)
-        print(Style.BRIGHT + Fore.YELLOW + f"* Theory {self.name}" + Style.RESET_ALL)
-        print("* Sorts:", self.sorts)
-        print("* Vocabulary:")
+        print(col + "*"*20 + f" Theory {self.name} " + "*"*20 + Style.RESET_ALL)
+        print(f"{b} Sorts:", self.sorts)
+        print(f"{b} Vocabulary:")
         for _, s in self.vocabulary.items():
-            print(f"*   {s}")
-        print("* Actions:")
+            print(f"{b}   {s}")
+        print(f"{b} Actions:")
         for a in self.actions:
-            print(f"*   {a}")
-        print("* Axioms:")
+            print(f"{b}   {a}")
+        print(f"{b} Axioms:")
         for ss, st in self.axioms.items():
-            print(f"*   {ss} ({len(st)}):")
+            print(f"{b}   {ss} ({len(st)}):")
             for a in st:
-                print(f"*     $ {a.formula.tex()} $")
+                print(f"{b}     $ {a.formula.tex()} $")
+        print(col + "*"*60 + Style.RESET_ALL)
 
 class HybridTheory(BasicActionTheory):
     """ Adds new axiom class: D_{sea} """
@@ -509,4 +640,22 @@ class HybridTheory(BasicActionTheory):
         Theory.__init__(self, name)
 
 
-Sitcalc.__populate__()
+def printd(string): # debug
+    print(Fore.YELLOW + string + Style.RESET_ALL)
+
+
+# Convenience variables
+# Universal for situation calculus
+SYM = {
+    "S_0" : Symbol("S_0", sort="situation"),
+    "a" : Symbol("a", sort="action", is_var=True),
+    "s" : Symbol("s", sort="situation", is_var=True),
+    "do" : Symbol("do", sort="situation", sorts=["action", "situation"]),
+    "Poss" : Symbol("Poss", sorts=["action", "situation"])
+}
+
+TERM = {}
+TERM["a"] = Term(SYM["a"])
+TERM["S_0"] = SitTerm(SYM["S_0"])
+TERM["s"] = SitTerm(SYM["s"])
+TERM["do(a,s)"] = SitTerm(SYM["do"], TERM["a"], TERM["s"])

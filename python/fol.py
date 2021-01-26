@@ -7,8 +7,9 @@ class Symbol:
         Consists of a name, sort, number and sort of arguments,
         infix - for representation only
         is_var - flags a variable symbol (Note: SOL allows function variables)
+        unique_name - a flag to indicate that symbol is to be treated like a standard name (i.e., there is an implicit unique name axiom for it over its sort. This needs some further thinking. Let's say only constants and action functions can have unique names.)
     """
-    def __init__(self, name, sorts=[], sort=None, infix=False, is_var=False):
+    def __init__(self, name, sorts=[], sort=None, infix=False, is_var=False, unique_name=False):
         # If no return sort, assume it's a predicate
         # Let the parent theory check for legal sorts
         if sort is None:
@@ -23,13 +24,15 @@ class Symbol:
             raise Exception("A variable must have a sort")
         if infix and len(sorts) != 2:
             raise Exception("An infix symbol must be binary, and this one is {}-ary".format(len(sorts)))
-
+        if is_var and unique_name:
+            raise Exception("Can't have a variable symbol with a unique name axiom!")
         self.name = name
         self.sorts = sorts
         self.arity = len(sorts)
         self.sort = sort
         self.is_var = is_var
         self.infix = infix
+        self.unique_name = unique_name
 
     def __str__(self):
         strargs = ""
@@ -44,25 +47,6 @@ class Symbol:
         if self.name == other.name and self.sorts == other.sorts and self.sort == other.sort and self.is_var == other.is_var and self.infix == other.infix:
             return True
         return False
-
-
-class RelFluentSymbol(Symbol):
-    """ Must have situation as last arg. sort"""
-    def __init__(self, name, sorts=[]): # sorts don't include sit term at the end
-        if "situation" in sorts:
-            raise Exception("Cannot have a second situation term in a relational fluent")
-        Symbol.__init__(self, name, sorts=sorts+["situation"])
-        self.type = "relational fluent"
-
-class FuncFluentSymbol(Symbol):
-    """ Must have situation as last arg. sort
-        For now, let the sort be reals-only
-    """
-    def __init__(self, name, sorts=[], sort="reals"): # sorts don't include sit term at the end
-        if "situation" in sorts:
-            raise Exception("Cannot have a second situation term in a relational fluent")
-        Symbol.__init__(self, name, sorts=sorts+["situation"], sort=sort)
-        self.type = "functional fluent"
 
 class Struct:
     """ The syntactic structure underlying
@@ -280,16 +264,19 @@ class Formula(object):
             recursive substitutions.
             'old' and 'new' must be lists of Term objects
             'old' must not contain duplicates, because substitution is a function
-            'old' must be all variables (this is essentially unification) (may relax later)
             This method returns a new formula!
+            Idea:
+              - find all collisions between members of 'old' and terms (inc.nested) of 'new'.
+              - for each such collision, rename the corresponding 'old' member to a ... TODO
+
         """
         result = copy.deepcopy(self)
 
         if len(old) != len(new) or len(set(old)) != len(old):
             raise Exception("Substitution specified incorrectly")
-        for v in old:
-            if not v.is_var:
-                raise Exception("Substitution's 'from' must be variables")
+        #for v in old:
+        #    if not v.is_var:
+        #        raise Exception("Substitution's 'from' must be variables")
         for (o,n) in zip(old, new):
             if o.sort != n.sort:
                 raise Exception("Sort mismatch in substitution")
@@ -308,9 +295,11 @@ class Formula(object):
         for c in collisions:
         #  - generate a fresh name (not in either terms_in_new or old)
             c_new = copy.deepcopy(c)
+            i = 1
             while c_new in all_vars:
                 #print("Finding name...")
-                c_new.rename(c.name + str(random.randint(1,10000))) # a hack, so what
+                c_new.rename(f"{c.name}_{{i}}")
+                i += 1
             #print(f"Renaming {c.tex()} to {c_new.tex()}")
         #  - rename variable in 'result'
             result.replace_term(c, c_new)
@@ -431,6 +420,17 @@ class EqAtom(Atom):
 
         symbol = Symbol("=", sorts=[args[0].sort]*2) # Might have to exclude this from theory's vocabulary
         Atom.__init__(self, symbol, *args)
+
+    def simplified(self):
+        #print(Back.MAGENTA + "EqAtom simplification!" + Style.RESET_ALL)
+        lhs = self.args[0]
+        rhs = self.args[1]
+        if lhs.symbol.unique_name and rhs.symbol.unique_name:
+            if lhs.symbol != rhs.symbol:
+                return Contradiction()
+            else:
+                return And(*[EqAtom(a, b) for (a, b) in zip(lhs.args, rhs.args)]).simplified()
+        return self
 
     def tex(self):
         return f"{self.args[0].tex()} \\eq {self.args[1].tex()}"

@@ -189,164 +189,161 @@ class FormulaBuilding(unittest.TestCase):
         print("atom1 after:", atom1.tex())
         print("atom2 after:", atom2.tex())
 
-    def test_BAT(self):
-        print("\n===== TEST BAT CREATION ======")
-        myBAT = BasicActionTheory("Dear Little BAT")
-        myBAT.print_vocabulary()
-
-        print("\n--- Relational SSA ---")
-        myF = RelFluentSymbol("MyFluent", sorts=["object", "object"])
-        my_x = Term(Symbol("x", sort="object", is_var=True))
-        my_y = Term(Symbol("y", sort="object", is_var=True))
-        my_z = Term(Symbol("z", sort="object", is_var=True))
-        myssa = RelSSA(myF, [my_x, my_y])
-
-        print("\nNo effects, only frame:")
-        myssa.describe()
-
-        print("\nAdding a positive effect:")
-        a1_sym = Symbol("sleep", sort="action", sorts=["object"])
-        cat_sym = Symbol("cat", sort="object", is_var=True)
-        fat_sym = Symbol("Fat", sorts=["object"])
-        a1 = Term(a1_sym, Term(cat_sym))
-        cc1 = Atom(fat_sym, Term(cat_sym))
-
-        # Don't remember what this is testing, but this stopped being raised
-        # After I stopped free variable generator from returning duplicates
-        #with self.assertRaises(Exception):
-        #    myssa.add_pos_effect(a1, cc1)
-
-        cat_sym = Symbol("cat", sort="object")
-        a1 = Term(a1_sym, Term(cat_sym))
-        cc1 = Atom(fat_sym, Term(cat_sym))
-        myssa.add_pos_effect(a1, cc1)
-        myssa.describe()
-
-        print("\nAdding a negative effect:")
-        a2_s = Symbol("move", sort="action", sorts=["object", "object"])
-        myssa.add_neg_effect(Term(a2_s, my_y, my_z), Tautology())
-        myssa.describe()
-
-        print("\nAdding another negative effect:")
-        a3_s = Symbol("eat", sort="action", sorts=["object"])
-        myssa.add_neg_effect(Term(a3_s, my_y), Atom(Symbol("Day")))
-        myssa.describe()
-
-        print("\nTest substitutions:")
-        with self.assertRaises(Exception):
-            myssa.replace_term(my_x, my_z)
-
-        print("(Replace variable x by constant c)")
-        my_c = Term(Symbol("c", sort="object"))
-        f = myssa.formula
-        print("Before:")
-        f.describe()
-        f.replace_term(my_x, my_c)
-        print("After:")
-        f.describe()
-
-        print("\n--- Functional SSA ---")
-        height = FuncFluentSymbol("height", sorts=["object"])
-        my_y_reals = Term(Symbol("y", sort="reals", is_var=True))
-        with self.assertRaises(Exception):
-            myfssa2 = FuncSSA(height, obj_vars=[my_y]) # Should throw an exception TODO
-        myfssa = FuncSSA(height, obj_vars=[my_x])
-        myfssa.describe()
-
-        print("\nAdding an effect")
-        a1_sym = Symbol("eat\\_mushroom", sort="action", sorts=["object"])
-        m = Term(Symbol("x_1", sort="object", is_var=True))
-        a1 = Term(a1_sym, m)
-        NP_sym = Symbol("NotPoison", sorts=["object"])
-        GF_sym = Symbol("GrowthFactor", sorts=["object", "reals"])
-        NP = Atom(NP_sym, m)
-        GF = Atom(GF_sym, m, my_y_reals)
-        #func = EqAtom() # need arithmetic for this
-        # y = height(s) * growth_factor
-        myfssa.add_effect(a1, And(NP, GF))
-        myfssa.describe()
-
-        sup = myfssa.formula.open()
-        print("Suppressed: ")
-        sup.describe()
-
-        print("\nAdding a second effect")
-        # a = think(d, t) \land y = height(d, s) + 2*t
-        a2_sym = Symbol("think", sort="action", sorts=["object", "reals"])
-        t = Term(Symbol("t", sort="reals", is_var=True))
-        d = Term(Symbol("d", sort="object"))
-        two = Term(Symbol("2", sort="reals"))
-        mult = Term(myBAT.vocabulary["*"], two, t)
-        ht = Term(height, d, Sitcalc.term["s"])
-        sm = Term(myBAT.vocabulary["+"], ht, mult)
-        ee = EqAtom(my_y_reals, sm)
-        a2 = Term(a2_sym, d, t)
-        myfssa.add_effect(a2, ee)
-        myfssa.describe()
-
-        sup = myfssa.formula.open()
-        print("Suppressed: ")
-        sup.describe()
-
-        # Now, let's practice adding SSA to a BAT
-        print("\nAdding SSA to BAT...")
-        myBAT.add_ss_axiom(myssa)
-        myBAT.add_ss_axiom(myfssa)
-
-        myBAT.describe()
+    # def test_BAT(self):
+    #     print("\n===== TEST BAT CREATION ======")
+    #     myBAT = BasicActionTheory("Dear Little BAT")
+    #     myBAT.print_vocabulary()
+    #
+    #     print("\n--- Relational SSA ---")
+    #     myF = RelFluentSymbol("MyFluent", sorts=["object", "object"])
+    #     my_x = Term(Symbol("x", sort="object", is_var=True))
+    #     my_y = Term(Symbol("y", sort="object", is_var=True))
+    #     my_z = Term(Symbol("z", sort="object", is_var=True))
+    #     #myF2 = RelFluent("MyFluent2", sitterm=vvvv)
+    #     myssa = RelSSA(myF, [my_x, my_y])
+    #
+    #
+    #     print("\nNo effects, only frame:")
+    #     myssa.describe()
+    #
+    #     print("\nAdding a positive effect:")
+    #     a1_sym = Symbol("sleep", sort="action", sorts=["object"])
+    #     cat_sym = Symbol("cat", sort="object", is_var=True)
+    #     fat_sym = Symbol("Fat", sorts=["object"])
+    #     a1 = Term(a1_sym, Term(cat_sym))
+    #     cc1 = Atom(fat_sym, Term(cat_sym))
+    #
+    #     # Don't remember what this is testing, but this stopped being raised
+    #     # After I stopped free variable generator from returning duplicates
+    #     #with self.assertRaises(Exception):
+    #     #    myssa.add_pos_effect(a1, cc1)
+    #
+    #     cat_sym = Symbol("cat", sort="object")
+    #     a1 = Term(a1_sym, Term(cat_sym))
+    #     cc1 = Atom(fat_sym, Term(cat_sym))
+    #     myssa.add_pos_effect(a1, cc1)
+    #     myssa.describe()
+    #
+    #     print("\nAdding a negative effect:")
+    #     a2_s = Symbol("move", sort="action", sorts=["object", "object"])
+    #     myssa.add_neg_effect(Term(a2_s, my_y, my_z), Tautology())
+    #     myssa.describe()
+    #
+    #     print("\nAdding another negative effect:")
+    #     a3_s = Symbol("eat", sort="action", sorts=["object"])
+    #     myssa.add_neg_effect(Term(a3_s, my_y), Atom(Symbol("Day")))
+    #     myssa.describe()
+    #
+    #     print("\nTest substitutions:")
+    #     with self.assertRaises(Exception):
+    #         myssa.replace_term(my_x, my_z)
+    #
+    #     print("(Replace variable x by constant c)")
+    #     my_c = Term(Symbol("c", sort="object"))
+    #     f = myssa.formula
+    #     print("Before:")
+    #     f.describe()
+    #     f.replace_term(my_x, my_c)
+    #     print("After:")
+    #     f.describe()
+    #
+    #     print("\n--- Functional SSA ---")
+    #     height = FuncFluentSymbol("height", sorts=["object"])
+    #     my_y_reals = Term(Symbol("y", sort="reals", is_var=True))
+    #     with self.assertRaises(Exception):
+    #         myfssa2 = FuncSSA(height, obj_vars=[my_y]) # Should throw an exception TODO
+    #     myfssa = FuncSSA(height, obj_vars=[my_x])
+    #     myfssa.describe()
+    #
+    #     print("\nAdding an effect")
+    #     a1_sym = Symbol("eat\\_mushroom", sort="action", sorts=["object"])
+    #     m = Term(Symbol("x_1", sort="object", is_var=True))
+    #     a1 = Term(a1_sym, m)
+    #     NP_sym = Symbol("NotPoison", sorts=["object"])
+    #     GF_sym = Symbol("GrowthFactor", sorts=["object", "reals"])
+    #     NP = Atom(NP_sym, m)
+    #     GF = Atom(GF_sym, m, my_y_reals)
+    #     #func = EqAtom() # need arithmetic for this
+    #     # y = height(s) * growth_factor
+    #     myfssa.add_effect(a1, And(NP, GF))
+    #     myfssa.describe()
+    #
+    #     sup = myfssa.formula.open()
+    #     print("Suppressed: ")
+    #     sup.describe()
+    #
+    #     print("\nAdding a second effect")
+    #     # a = think(d, t) \land y = height(d, s) + 2*t
+    #     a2_sym = Symbol("think", sort="action", sorts=["object", "reals"])
+    #     t = Term(Symbol("t", sort="reals", is_var=True))
+    #     d = Term(Symbol("d", sort="object"))
+    #     two = Term(Symbol("2", sort="reals"))
+    #     mult = Term(myBAT.vocabulary["*"], two, t)
+    #     ht = Term(height, d, TERM["s"])
+    #     sm = Term(myBAT.vocabulary["+"], ht, mult)
+    #     ee = EqAtom(my_y_reals, sm)
+    #     a2 = Term(a2_sym, d, t)
+    #     myfssa.add_effect(a2, ee)
+    #     myfssa.describe()
+    #
+    #     sup = myfssa.formula.open()
+    #     print("Suppressed: ")
+    #     sup.describe()
+    #
+    #     # Now, let's practice adding SSA to a BAT
+    #     print("\nAdding SSA to BAT...")
+    #     myBAT.add_ss_axiom(myssa)
+    #     myBAT.add_ss_axiom(myfssa)
+    #
+    #     myBAT.describe()
 
 
     def test_BW(self):
+        # Create common symbols and terms
+        s = TERM["s"]
+        S_0 = TERM["S_0"]
+
         # Create a basic action theory
         bat = BasicActionTheory("Blocks World")
-        #bat.describe()
 
-        # Create common symbols and terms
-        s = Sitcalc.term["s"]
-        S_0 = Sitcalc.term["S_0"]
-        move = Symbol("move", sort="action", sorts=["object","object"])
-        x = Term(Symbol("x", sort="object", is_var=True))
-        y = Term(Symbol("y", sort="object", is_var=True))
-        z = Term(Symbol("z", sort="object", is_var=True))
+        # Create variables of sort Object
+        x = ObjVar("x")
+        y = ObjVar("y")
+        z = ObjVar("z")
+        # Create some action terms
         move_x_y = ActionTerm("move", x, y)
         move_y_z = ActionTerm("move", y, z)
         move_y_x = ActionTerm("move", y, x)
 
         # Create domain constants
-        T = Term(Symbol("T", sort="object"))
-        A = Term(Symbol("A", sort="object"))
-        B = Term(Symbol("B", sort="object"))
-        C = Term(Symbol("C", sort="object"))
-
-        # Create fluent symbols
-        on = FuncFluentSymbol("on", sorts=["object"], sort="object")
-        clear = RelFluentSymbol("clear", sorts=["object"])
+        T = UConst("T")
+        A = UConst("A")
+        B = UConst("B")
+        C = UConst("C")
 
         # Construct subformulas and formulas
-        clear_x_s = Atom(clear, x, s)
+        clear_x_s = RelFluent("clear", x, s)
+        clear_y_s = RelFluent("clear", y, s)
         neq_x_y = Neg(EqAtom(x, y))
         neq_x_T = Neg(EqAtom(x, T))
-        clear_y_s = Atom(clear, y, s)
         eq_y_T = EqAtom(y, T)
         rhs = And(clear_x_s, neq_x_y, neq_x_T, Or(clear_y_s, eq_y_T))
 
-        # Add a precondition axiom
+        # Add a precondition axiom for move
         apa = APA(move_x_y, rhs=rhs)
         bat.add_ap_axiom(apa)
-        #bat.describe()
 
-        # Add another
+        # Add a precondition axiom for noop
         noop = ActionTerm("noop")
         bat.add_ap_axiom(APA(noop))
 
-
         # Create and add initial state axioms
-        init1 = InitAxiom(EqAtom(Term(on, A, S_0), T).close())
-        init2 = InitAxiom(EqAtom(Term(on, C, S_0), B).close())
-        init3 = InitAxiom(EqAtom(Term(on, B, S_0), T).close())
-        init4 = InitAxiom(Atom(clear, A, S_0).close())
-        init5 = InitAxiom(Atom(clear, C, S_0).close())
-        init6 = InitAxiom(Neg(Atom(clear, B, S_0).close()))
+        init1 = InitAxiom(EqAtom(ObjFluent("on", A, S_0), T).close())
+        init2 = InitAxiom(EqAtom(ObjFluent("on", C, S_0), B).close())
+        init3 = InitAxiom(EqAtom(ObjFluent("on", B, S_0), T).close())
+        init4 = InitAxiom(RelFluent("clear", A, S_0).close())
+        init5 = InitAxiom(RelFluent("clear", C, S_0).close())
+        init6 = InitAxiom(Neg(RelFluent("clear", B, S_0).close()))
 
         bat.add_init_axiom(init1)
         bat.add_init_axiom(init2)
@@ -354,43 +351,47 @@ class FormulaBuilding(unittest.TestCase):
         bat.add_init_axiom(init4)
         bat.add_init_axiom(init5)
         bat.add_init_axiom(init6)
-        #bat.describe()
 
         # Construct and add SSA for clear (relational)
-        ssa_clear = RelSSA(clear, [x])  # Create the frame-only axiom
-        ssa_clear.add_pos_effect(move_y_z, context=EqAtom(y, Term(on, x, s))) # Add a positive effect
+        ssa_clear = RelSSA(RelFluent("clear", x, s))
+        ssa_clear.add_pos_effect(move_y_z, context=EqAtom(y, ObjFluent("on", x, s)))
         ssa_clear.add_neg_effect(move_y_x)
         bat.add_ss_axiom(ssa_clear)
-        #bat.describe()
 
         # Construct and add SSA for on (functional)
-        ssa_on = FuncSSA(on, [x])
+        ssa_on = FuncSSA(ObjFluent("on", x, s))
         ssa_on.add_effect(move_x_y)
         bat.add_ss_axiom(ssa_on)
+
+        # Done building the theory. Let's see it.
         bat.describe()
+
+        #********************************************************************
+        #********************************************************************
+        #********************************************************************
 
         # Test regressability
         #print("\nTest regression")
-        w = Atom(clear, A, S_0)
+        w = RelFluent("clear", A, S_0)
         sitterm = S_0
-        do_a_s = Sitcalc.term["do(a,s)"]
+        do_a_s = TERM["do(a,s)"]
         self.assertTrue(bat.is_regressable_to(w, sitterm))
         self.assertFalse(bat.is_regressable_to(w, do_a_s))
-        w = Atom(clear, A, do_a_s)
+        w = RelFluent("clear", A, do_a_s)
         self.assertTrue(bat.is_regressable_to(w, do_a_s))
         self.assertFalse(bat.is_regressable_to(w, S_0))
         self.assertTrue(bat.is_regressable_to(w, s))
-        w = PossAtom(Sitcalc.term["a"], s)
+        w = PossAtom(TERM["a"], s)
         self.assertFalse(bat.is_regressable_to(w, s))
         w = PossAtom(move_x_y, s)
         self.assertTrue(bat.is_regressable_to(w, s))
         self.assertFalse(bat.is_regressable_to(w, S_0))
 
         # Test APA RHS instantiation
-        w = PossAtom(Term(move, A, B), S_0)
+        w = PossAtom(ActionTerm("move", A, B), S_0)
         irhs = bat.instantiate_ap_rhs(w)
         print(f"\nInstantiating RHS wrt\n    {w.tex()}\nyields\n    {irhs.tex()}")
-        w = PossAtom(Term(move, A, B), do_a_s)
+        w = PossAtom(ActionTerm("move", A, B), do_a_s)
         irhs = bat.instantiate_ap_rhs(w)
         print(f"\nInstantiating RHS wrt\n    {w.tex()}\nyields\n    {irhs.tex()}")
         w = PossAtom(noop, do_a_s)
@@ -402,7 +403,6 @@ class FormulaBuilding(unittest.TestCase):
         f_sym = Symbol("f", sort="object", sorts=["object"])
         f_y = Term(f_sym, y)
         at = Atom(Symbol("A", sorts=["object", "object"]), y, x)
-        #src = [x,y]
         src = [x,y]
         tgt = [f_y, x]
         print(f"Source: {at.tex()}")
@@ -420,13 +420,47 @@ class FormulaBuilding(unittest.TestCase):
         # Test regression
         print(f"\nTesting regression of Poss atoms")
         # APA only
-        w = PossAtom(Term(move, A, B), do_a_s)
+        w = PossAtom(ActionTerm("move", A, B), do_a_s)
         print(f"Is {w.tex()} regressable to {do_a_s.tex()}? -> {bat.is_regressable_to(w, do_a_s)}")
         regr = bat.rho(w, do_a_s)
         print(f"Result: {regr.tex()}")
         # works. Now, implement full regression (add func and rel SSA)
 
+        # Test rel SSA regression
+        print(f"\nUsing relational SSA")
+        sigma = SitTerm(SYM["do"], ActionTerm("move", B, T), TERM["s"])
+        w = PossAtom(ActionTerm("move", A, B), sigma)
+        print(f"Is {w.tex()} regressable to {s.tex()}? -> {bat.is_regressable_to(w, s)}")
+        regr = bat.rho(w, s)
+        print(f"Result: {regr.tex()}")
 
+        # A simpler case
+        print(f"\nUsing relational SSA: Test 2")
+        w = RelFluent("clear", C, SitTerm(SYM["do"], ActionTerm("move", B, A), TERM["S_0"]))
+        print(f"Is {w.tex()} regressable to {S_0.tex()}? -> {bat.is_regressable_to(w, S_0)}")
+        regr = bat.rho(w, S_0)
+        print(f"Result: {regr.tex()}")
+        regr = regr.simplified()
+        print(f"Same, simplified: {regr.tex()}")
+
+        # Test functional fluent regression
+        print(f"\nRegression involving functional SSA: Test 1")
+        # B = on(A, do(move(C,T), S_0))
+        # "B is on A after moving C to table" (false)
+        query = EqAtom(B, ObjFluent("on", A, Do(ActionTerm("move", C, T), S_0)))
+        print(query.tex())
+        print(f"All terms in {regr.tex()}:")
+        for t in query.terms():
+            if isinstance(t, FuncFluent):
+                print(f"  {t.tex()} (FUNCTIONAL FLUENT TERM!!!)")
+            else:
+                print(f"  {t.tex()} (skip)")
+
+
+        regr = bat.rho(query, S_0)
+        print(f"Result: {regr.tex()}")
+        regr = regr.simplified()
+        print(f"Same, simplified: {regr.tex()}")
         # Implement BAT.situations() to iterate through the entire infinite tree of situations
         # Finish regression and test on a ground situation term
         # Semantics
