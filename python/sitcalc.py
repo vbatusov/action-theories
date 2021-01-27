@@ -1,6 +1,10 @@
 from fol import *
 from colorama import Fore, Back, Style  # Pretty printing
 
+# class SCFormula(Formula):
+#     """ Situation calculus formula. Differs from a regular formula by presence of
+#         operations which only make sense in situation calculus """
+#     def __init__(self, )
 
 class UConst(Term):
     """ A constant (0-ary function) with a unique name """
@@ -336,8 +340,8 @@ class FuncSSA(SSA):
         self.univ_vars = fluent.obj_args + (self.y, TERM['a'], TERM['s'],)
 
         # Build the actual func. fluent terms
-        self.lhs_fluent = Term(fluent.symbol, *self.lhs_atom_args)
-        self.rhs_fluent = Term(fluent.symbol, *self.rhs_atom_args)
+        self.lhs_fluent = fluent.__class__(fluent.name, *self.lhs_atom_args) #Term(fluent.symbol, *self.lhs_atom_args)
+        self.rhs_fluent = fluent.__class__(fluent.name, *self.rhs_atom_args) #Term(fluent.symbol, *self.rhs_atom_args)
         # LHS equality
         self.lhs = EqAtom(self.lhs_fluent, self.y)
         # RHS equality
@@ -452,9 +456,14 @@ class BasicActionTheory(Theory):
             checking for whether the fluent is prime.
             But! If we don't nest f.fluents, then every f.fluent is prime.
         """
+        #print(f"searching for a prime fluent in {w.tex()}...")
         for t in w.terms():
+            #print(f"Looking at term {t.tex()}...")
+            #print(type(t))
             if isinstance(t, FuncFluent):
+                #print("yes")
                 return t
+            #print("no")
         return None
 
     def get_apa_by_poss(self, poss_atom):
@@ -468,25 +477,25 @@ class BasicActionTheory(Theory):
     def get_rssa_by_atom(self, fluent_atom):
         if not isinstance(fluent_atom, RelFluent):
             raise TypeError(f"{fluent_atom.tex()} is not a proper RelFluent!")
-        printd(f"Searching for relational SSA to match {fluent_atom.tex()}")
+        #printd(f"Searching for relational SSA to match {fluent_atom.tex()}")
         for rssa in self.axioms["rss"]:
-            printd(f"    {fluent_atom.symbol} vs. {rssa.lhs.symbol}")
+            #printd(f"    {fluent_atom.symbol} vs. {rssa.lhs.symbol}")
             if fluent_atom.symbol == rssa.lhs.symbol:
-                printd("    SUCCESS!")
+                #printd("    SUCCESS!")
                 return rssa
-            printd("    FAIL!")
+            #printd("    FAIL!")
         return None # maybe warrants raising an exception? Fail loudly, after all.
 
     def get_fssa_by_term(self, fluent_term):
         if not isinstance(fluent_term, FuncFluent):
             raise TypeError(f"{fluent_term.tex()} is not a proper FuncFluent!")
-        printd(f"Searching for functional SSA to match {fluent_term.tex()}")
+        #printd(f"Searching for functional SSA to match {fluent_term.tex()}")
         for fssa in self.axioms["fss"]:
-            printd(f"    {fluent_term.symbol} vs. {fssa.lhs_fluent.symbol}")
+            #printd(f"    {fluent_term.symbol} vs. {fssa.lhs_fluent.symbol}")
             if fluent_term.symbol == fssa.lhs_fluent.symbol:
-                printd("    SUCCESS!")
+                #printd("    SUCCESS!")
                 return fssa
-            printd("    FAIL!")
+            #printd("    FAIL!")
         return None # maybe warrants raising an exception? Fail loudly, after all.
 
     def instantiate_ap_rhs(self, poss_atom):
@@ -572,6 +581,8 @@ class BasicActionTheory(Theory):
             Out:
               a new formula, which is the result of regressing given formula bacwards to sitterm using the SSA and APA owned by self.
         """
+        # Just in case, a defensive deep copy
+        #w = copy.deepcopy(w)
         prefix = "  "*depth
         printd(f"{prefix}Regressing {w.tex()} to term {sitterm.tex()}")
 
@@ -593,19 +604,19 @@ class BasicActionTheory(Theory):
                 # instantiate rhs of APA wrt to atom's args, regress that
                 return self._rho(self.instantiate_ap_rhs(w), sitterm, depth=depth+1) #.simplified()
             elif w.uniform_in(sitterm): # Uniform in sitterm
-                printd(f"{prefix}Uniform in {sitterm}, end of branch.")
+                printd(f"{prefix}Uniform in {sitterm}," + Back.CYAN + " end of branch." + Style.RESET_ALL)
                 return w #.simplified() # Terminal clause
             elif prime_fluent is not None: # Has a prime func. fluent
-                printd(f"{prefix}Mentions a prime functional fluent")
+                printd(f"{prefix}Mentions a prime functional fluent {prime_fluent.tex()}")
                 # In W, replace the fluent by a new variable y_n (1)
                 w2 = copy.deepcopy(w)
                 var = self.fresh_var(w.vars(), "y", prime_fluent.sort)
-                print(f"Will use new \\exists variable {var.tex()}")
+                #print(f"Will use new \\exists variable {var.tex()}")
                 w2.replace_term(prime_fluent, var)
-                print(f"Replacing fluent by var in query: {w2.tex()}")
+                #print(f"Replacing fluent by var in query: {w2.tex()}")
                 # instantiate RHS of fluent's ssa with fluent's arguments, inc. variable y_n (2)
                 inst_rhs = self.instantiate_fssa_rhs(prime_fluent, var)
-                print(f"Instantiated RHS: {inst_rhs.tex()}")
+                #print(f"Instantiated RHS: {inst_rhs.tex()}")
                 # return 'exists y_n ((1) \land (2)) '
                 return Exists(var, self._rho(And(inst_rhs, w2), sitterm, depth=depth+1)) # use func. SSA
             elif isinstance(w, RelFluent): # Relational fluent atom
@@ -658,4 +669,4 @@ TERM = {}
 TERM["a"] = Term(SYM["a"])
 TERM["S_0"] = SitTerm(SYM["S_0"])
 TERM["s"] = SitTerm(SYM["s"])
-TERM["do(a,s)"] = SitTerm(SYM["do"], TERM["a"], TERM["s"])
+TERM["do(a,s)"] = Do(TERM["a"], TERM["s"])

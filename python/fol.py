@@ -210,7 +210,7 @@ class Formula(object):
 
     def simplified(self):
         """ Catch-all for formulas that don't have their own simplification method """
-        return self
+        return copy.deepcopy(self)
 
     def free_vars(self): # will this work?
         # all vars which are not in nonfree_vars
@@ -336,7 +336,7 @@ class Formula(object):
         """ True iff, in self, every term of sort term.sort is term. """
         for t in self.terms(sort=term.sort):
             if term != t:
-                print(f"Formula {self.tex()} is not uniform in {term.tex()} because it contains term {t.tex()}")
+                #print(f"Formula {self.tex()} is not uniform in {term.tex()} because it contains term {t.tex()}")
                 return False
         return True
 
@@ -430,7 +430,7 @@ class EqAtom(Atom):
                 return Contradiction()
             else:
                 return And(*[EqAtom(a, b) for (a, b) in zip(lhs.args, rhs.args)]).simplified()
-        return self
+        return copy.deepcopy(self)
 
     def tex(self):
         return f"{self.args[0].tex()} \\eq {self.args[1].tex()}"
@@ -519,25 +519,32 @@ class Junction(Formula):
 
 
 class And(Junction):
-    def __new__(cls, *formulas, **kwargs):
-        if len(formulas) == 0:
-            print("Constructing And(Junction) from an empty set of formulas!!", formulas)
-            #raise Exception("Let's take a look at the stack")
-            return Tautology()
-        elif len(formulas) == 1:
-            return formulas[0]
-        else:
-            return super().__new__(cls) #, *formulas, **kwargs)
+    # def __new__(cls, *formulas, **kwargs):
+    #     if len(formulas) == 0:
+    #         print("Constructing And(Junction) from an empty set of formulas!!", formulas)
+    #         #raise Exception("Let's take a look at the stack")
+    #         return Tautology()
+    #     elif len(formulas) == 1:
+    #         return formulas[0]
+    #     else:
+    #         return super().__new__(cls) #, *formulas, **kwargs)
 
     def __init__(self, *formulas):
-        Junction.__init__(self, *formulas)
+        if len(formulas) == 0:
+            Junction.__init__(self, Tautology())
+        else:
+            Junction.__init__(self, *formulas)
 
-    def __deepcopy__(self, memo):
-        cp_f = copy.deepcopy(self.formulas, memo)
-        return And(*cp_f)
+    # def __deepcopy__(self, memo):
+    #     cp_f = copy.deepcopy(self.formulas, memo)
+    #     return And(*cp_f)
 
     def simplified(self):
         """ Returns a shallow syntactic simplification of self """
+        # Empty conjunctions are now ruled out.
+        if len(self.formulas) == 1:
+            return self.formulas[0].simplified()
+
         new_formulas = []
         for f in self.formulas:
             tmp = f.simplified()
@@ -547,30 +554,26 @@ class And(Junction):
                 pass
             else:
                 new_formulas.append(tmp)
+
         return And(*new_formulas)
 
     def tex(self):
-        texes = ["({})".format(f.tex()) if isinstance(f, Or) else f.tex() for f in self.formulas]
+        texes = [f"({f.tex()})" if isinstance(f, Or) else f.tex() for f in self.formulas]
         return " \\land ".join(texes)
 
 class Or(Junction):
-    def __new__(cls, *formulas, **kwargs):
-        if len(formulas) == 0:
-            return Contradiction()
-        elif len(formulas) == 1:
-            return formulas[0]
-        else:
-            return super().__new__(cls)
 
     def __init__(self, *formulas):
-        Junction.__init__(self, *formulas)
-
-    def __deepcopy__(self, memo):
-        cp_f = copy.deepcopy(self.formulas, memo)
-        return Or(*cp_f)
+        if len(formulas) == 0:
+            Junction.__init__(self, Contradiction())
+        else:
+            Junction.__init__(self, *formulas)
 
     def simplified(self):
         """ Returns a shallow syntactic simplification of self """
+        if len(self.formulas) == 1:
+            return self.formulas[0].simplified()
+
         new_formulas = []
         for f in self.formulas:
             tmp = f.simplified()
@@ -580,10 +583,11 @@ class Or(Junction):
                 return tmp
             else:
                 new_formulas.append(tmp)
+
         return Or(*new_formulas)
 
     def tex(self):
-        texes = ["({})".format(f.tex()) if isinstance(f, And) else f.tex() for f in self.formulas]
+        texes = [f"({f.tex()})" if isinstance(f, And) else f.tex() for f in self.formulas]
         return " \\lor ".join(texes)
 
 class Implies(Junction):
@@ -692,8 +696,14 @@ class Forall(Quantified):
         f_simplified = self.formula.simplified()
         if isinstance(f_simplified, Contradiction) or isinstance(f_simplified, Tautology):
             return f_simplified
-        else:
-            return Forall(copy.deepcopy(self.var), f_simplified)
+        elif isinstance(f_simplified, Junction):
+            # EXPERIMENTAL!!!
+            # Purpose: Minimize the scope of the quantifier
+            pass
+
+            # END
+
+        return Forall(copy.deepcopy(self.var), f_simplified)
 
     def tex(self):
         return Quantified.tex(self, "forall")
@@ -709,8 +719,13 @@ class Exists(Quantified):
         f_simplified = self.formula.simplified()
         if isinstance(f_simplified, Contradiction) or isinstance(f_simplified, Tautology):
             return f_simplified
-        else:
-            return Exists(copy.deepcopy(self.var), f_simplified)
+        elif isinstance(f_simplified, Junction):
+            # EXPERIMENTAL!!!
+            # Purpose: Minimize the scope of the quantifier
+            pass
+
+            # END
+        return Exists(copy.deepcopy(self.var), f_simplified)
 
     def tex(self):
         return Quantified.tex(self, "exists")
