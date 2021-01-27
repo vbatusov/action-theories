@@ -447,6 +447,7 @@ class BasicActionTheory(Theory):
         while True:
             var = Term(Symbol(f"{basename}_{{{i}}}", sort=sort, is_var=True))
             if var not in vars:
+                print(Back.MAGENTA + f"FRESH VARIABLE {var.tex()}" + Style.RESET_ALL)
                 return var
             i += 1
 
@@ -610,7 +611,8 @@ class BasicActionTheory(Theory):
                 printd(f"{prefix}Mentions a prime functional fluent {prime_fluent.tex()}")
                 # In W, replace the fluent by a new variable y_n (1)
                 w2 = copy.deepcopy(w)
-                var = self.fresh_var(w.vars(), "y", prime_fluent.sort)
+                #var = self.fresh_var(w.vars(), "y", prime_fluent.sort)
+                var = fresh_var("y", prime_fluent.sort)
                 #print(f"Will use new \\exists variable {var.tex()}")
                 w2.replace_term(prime_fluent, var)
                 #print(f"Replacing fluent by var in query: {w2.tex()}")
@@ -652,6 +654,7 @@ class HybridTheory(BasicActionTheory):
 
 
 def printd(string): # debug
+    return
     print(Fore.YELLOW + string + Style.RESET_ALL)
 
 
@@ -670,3 +673,10 @@ TERM["a"] = Term(SYM["a"])
 TERM["S_0"] = SitTerm(SYM["S_0"])
 TERM["s"] = SitTerm(SYM["s"])
 TERM["do(a,s)"] = Do(TERM["a"], TERM["s"])
+
+y_counter = 0
+def fresh_var(basename, sort):
+    """ Returns a variable of sort 'sort' named f'{basename}_N' where N is an integer picked such that this name is not in 'vars'"""
+    global y_counter
+    y_counter += 1
+    return Term(Symbol(f"{basename}_{{{y_counter}}}", sort=sort, is_var=True))

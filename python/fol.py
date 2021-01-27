@@ -44,7 +44,7 @@ class Symbol:
         return "{}{}{} - {}".format(self.name, strargs, retsort, self.type)
 
     def __eq__(self, other):
-        if self.name == other.name and self.sorts == other.sorts and self.sort == other.sort and self.is_var == other.is_var and self.infix == other.infix:
+        if self.name == other.name and self.sorts == other.sorts and self.sort == other.sort and self.is_var == other.is_var and self.infix == other.infix and self.unique_name == other.unique_name:
             return True
         return False
 
@@ -208,9 +208,24 @@ class Formula(object):
         pass
         # Nothing here
 
+    def __eq__(self, other):
+        return False # Catch-all
+
     def simplified(self):
         """ Catch-all for formulas that don't have their own simplification method """
         return copy.deepcopy(self)
+
+    def simplified_stable(self):
+        """ Simplified as many times as it takes to arrive at a stable formula """
+        j = 0
+        r = self.simplified()
+        while j < 1000:
+            r_new = r.simplified()
+            if r.tex() == r_new.tex():
+                return r
+            j += 1
+            r = r_new
+        raise Exception(f"Simplified formula not stable after {j} iterations!")
 
     def free_vars(self): # will this work?
         # all vars which are not in nonfree_vars
@@ -372,6 +387,8 @@ class Atom(Formula, Struct):
         Formula.__init__(self)
         Struct.__init__(self, symbol, *args)
 
+    def __eq__(self, other):
+        return isinstance(other, Atom) and ((self.symbol, self.args) == (other.symbol, other.args))
     # Having free_vars and non_free vars requires duplication of logic
     # Better define vars and nonfree_vars, and get free_vars by difference
     # def vars(self): # generator
@@ -441,6 +458,9 @@ class Neg(Formula): # negation
         # No constraints. Any formula can be negated.
         self.formula = formula
 
+    def __eq__(self, other):
+        return isinstance(other, Neg) and (self.formula == other.formula)
+
     def simplified(self):
         """ Returns a shallow syntactic simplification of self """
         f_under_neg = self.formula.simplified()
@@ -482,10 +502,6 @@ class Neg(Formula): # negation
 class Junction(Formula):
     def __init__(self, *formulas): # a list of formulas in junction
         Formula.__init__(self)
-        #if len(formulas) < 2:
-        #    raise Exception("A binary connective needs at least two formulas!")
-        # Let's relax this a bit --- allow empty junctions, handle depending on child class
-
         self.formulas = list(formulas)
 
     def vars(self, sort="any"): # generator
@@ -509,7 +525,6 @@ class Junction(Formula):
             yield from f.atoms()
 
     def replace_term(self, term, new_term):
-        #print(f"Junction: replacing {term.tex()} by {new_term.tex()}")
         for f in self.formulas:
             f.replace_term(term, new_term)
 
@@ -519,50 +534,52 @@ class Junction(Formula):
 
 
 class And(Junction):
-    # def __new__(cls, *formulas, **kwargs):
-    #     if len(formulas) == 0:
-    #         print("Constructing And(Junction) from an empty set of formulas!!", formulas)
-    #         #raise Exception("Let's take a look at the stack")
-    #         return Tautology()
-    #     elif len(formulas) == 1:
-    #         return formulas[0]
-    #     else:
-    #         return super().__new__(cls) #, *formulas, **kwargs)
-
     def __init__(self, *formulas):
         if len(formulas) == 0:
             Junction.__init__(self, Tautology())
         else:
             Junction.__init__(self, *formulas)
 
-    # def __deepcopy__(self, memo):
-    #     cp_f = copy.deepcopy(self.formulas, memo)
-    #     return And(*cp_f)
+    def add(self, formula):
+        """ Add a conjunct. If already there, do nothing """
+        if formula not in self.formulas:
+            self.formulas.append(formula)
 
     def simplified(self):
         """ Returns a shallow syntactic simplification of self """
-        # Empty conjunctions are now ruled out.
-        if len(self.formulas) == 1:
-            return self.formulas[0].simplified()
+        # Empty conjunctions are now ruled out in constructor.
+        #if len(self.formulas) == 1:
+        #    return self.formulas[0].simplified()
 
-        new_formulas = []
+        # In the beginning, god gathered all conjuncts under one roof.
+        s_conjuncts = [] # self.formulas except for those which are themselves conjunctions, get those instead
         for f in self.formulas:
-            tmp = f.simplified()
-            if isinstance(tmp, Contradiction):
-                return tmp
-            elif isinstance(tmp, Tautology):
-                pass
+            f_s = f.simplified() # if f is conjunction, then f_s is a flat conjunction
+            if isinstance(f_s, And): # if f was unary, then f_s is either non-unary or not a conjunction
+                for f2 in f_s.formulas: # f2 is an already-simplified nested conjunct
+                    if f2 not in s_conjuncts and not isinstance(f2, Tautology):
+                        s_conjuncts.append(f2)
+                    # else skip it
             else:
-                new_formulas.append(tmp)
+                if f_s not in s_conjuncts and not isinstance(f_s, Tautology):
+                    s_conjuncts.append(f_s)
 
-        return And(*new_formulas)
+        #At this point, s_conjuncts
+
+        for f in s_conjuncts:
+            if isinstance(f, Contradiction):
+                return f
+
+        if len(s_conjuncts) == 1: # may still end up with a single conjunct!
+            return s_conjuncts[0]
+
+        return And(*s_conjuncts)
 
     def tex(self):
         texes = [f"({f.tex()})" if isinstance(f, Or) else f.tex() for f in self.formulas]
         return " \\land ".join(texes)
 
 class Or(Junction):
-
     def __init__(self, *formulas):
         if len(formulas) == 0:
             Junction.__init__(self, Contradiction())
@@ -581,6 +598,8 @@ class Or(Junction):
                 pass
             elif isinstance(tmp, Tautology):
                 return tmp
+            elif isinstance(tmp, Or): # flatten nested disjunctions
+                new_formulas += tmp.formulas
             else:
                 new_formulas.append(tmp)
 
@@ -659,6 +678,9 @@ class Quantified(Formula):
         self.var = var
         self.formula = formula
 
+    def __eq__(self, other):
+        return self.__class__ == other.__class__ and ((self.var, self.formula) == (other.var, other.formula))
+
     def vars(self, sort="any"): # generator
         yield from self.formula.vars(sort=sort)
 
@@ -717,14 +739,54 @@ class Exists(Quantified):
         """ Returns a shallow syntactic simplification of self
             Don't bother simplifying quantifiers for now """
         f_simplified = self.formula.simplified()
+
         if isinstance(f_simplified, Contradiction) or isinstance(f_simplified, Tautology):
             return f_simplified
-        elif isinstance(f_simplified, Junction):
+        elif isinstance(f_simplified, And) or isinstance(f_simplified, Or):
             # EXPERIMENTAL!!!
             # Purpose: Minimize the scope of the quantifier
-            pass
+            f_inscope = []
+            f_outscope = []
+            for f in f_simplified.formulas:
+                if self.var in f.free_vars():
+                    f_inscope.append(f)
+                else:
+                    f_outscope.append(f)
+            if len(f_inscope) == 0: # nothing in scope, remove quantifier
+                return f_simplified
+            elif len(f_outscope) > 0: # some inscope, some out
+                juncts = f_outscope + [Exists(copy.deepcopy(self.var), f_simplified.__class__(*f_inscope))]
+                return f_simplified.__class__(*juncts).simplified()
+            else: # all inscope, fall back on default return
+                # EXPERIMENTAL
+                if isinstance(f_simplified, And) and len(f_simplified.formulas) > 1: # if a non-unary conjunction
+                    term = None # Term to replace self.var in rest
+                    rest = [] # Rest of conjuncts, to be preserved after replacing self.var by rest
+                    for conj in f_simplified.formulas:
+                        if isinstance(conj, EqAtom) and self.var in conj.args: # and if there is an equality atom about self.var
+                            term = conj.args[0]
+                            if term == self.var:
+                                term = conj.args[1]  # Get the term on the other side of the equality
+                        else: # not an equality conjunct, store it
+                            rest.append(conj)
+                    if not term is None and len(rest) > 0:
+                        # Get rid of the equality and substitute term for self.var in the rest
+                        #print(f"Experimental: in expression \\exists {self.var.tex()} {f_simplified.tex()},")
+                        #print(f"Will remove \\exists, EqAtom and replace {self.var.tex()} by {term.tex()}")
+                        for r in rest:
+                            r.replace_term(self.var, term)
+                        #print(f"Remaining atoms:", ", ".join([str(s) for s in rest]))
+                        return And(*rest).simplified()
+                    # else, fall back on default return
 
-            # END
+
+
+        elif isinstance(f_simplified, EqAtom) and (self.var in f_simplified.args):
+            # Also experimental
+            # Purpose: eliminate trivial statements \exists x(x = TERM)
+            # Every term has an interpretation, so asserting its existence is a tautology
+            return Tautology()
+
         return Exists(copy.deepcopy(self.var), f_simplified)
 
     def tex(self):

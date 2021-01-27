@@ -297,6 +297,24 @@ class FormulaBuilding(unittest.TestCase):
     #
     #     myBAT.describe()
 
+    def test_simplification(self):
+        S_0 = TERM["S_0"]
+        C = UConst("C")
+        y = ObjVar("y")
+        T = UConst("T")
+        z = ObjVar("z")
+
+        print("TEST 1")
+        query = Exists(z, Exists(y, And(EqAtom(C, y), EqAtom(T, z), EqAtom(y, ObjFluent("on", C, S_0)))))
+        print(f"Query: {query.tex()}")
+        print(f"Simpl: {query.simplified().tex()}")
+
+        print("TEST 2")
+        y_ = ObjVar("y'")
+        B = UConst("B")
+        query = And(EqAtom(y, C), Neg(Exists(y_, EqAtom(B, y_))))
+        print(f"Query: {query.tex()}")
+        print(f"Simpl: {query.simplified().tex()}")
 
     def test_BW(self):
         # Create common symbols and terms
@@ -428,7 +446,7 @@ class FormulaBuilding(unittest.TestCase):
 
         # Test rel SSA regression
         print(f"\nUsing relational SSA")
-        sigma = SitTerm(SYM["do"], ActionTerm("move", B, T), TERM["s"])
+        sigma = Do(ActionTerm("move", B, T), TERM["s"]) #SitTerm(SYM["do"], ActionTerm("move", B, T), TERM["s"])
         w = PossAtom(ActionTerm("move", A, B), sigma)
         print(f"Is {w.tex()} regressable to {s.tex()}? -> {bat.is_regressable_to(w, s)}")
         regr = bat.rho(w, s)
@@ -461,6 +479,20 @@ class FormulaBuilding(unittest.TestCase):
         print(f"Result: {regr.tex()}")
         regr = regr.simplified()
         print(f"Same, simplified: {regr.tex()}")
+
+        print(Fore.RED + f"\nLet's now have a regression which involves all cases!" + Style.RESET_ALL)
+        sigma_1 = Do(ActionTerm("move", C, T), S_0)
+        sigma_2 = Do(ActionTerm("noop"), sigma_1)
+        sigma_3 = Do(ActionTerm("move", A, B), sigma_1)
+        query = EqAtom(B, ObjFluent("on", A, sigma_3))
+        query = And(query, PossAtom(ActionTerm("move", A, B), sigma_1))
+        query = And(query, RelFluent("clear", C, sigma_2))
+        print(query.tex())
+        regr = bat.rho(query, S_0)
+        print(f"Result: {regr.tex()}")
+        print(f"Same, simplified: ")
+        print(f"{regr.simplified().tex()}")
+
         # Implement BAT.situations() to iterate through the entire infinite tree of situations
         # Finish regression and test on a ground situation term
         # Semantics
