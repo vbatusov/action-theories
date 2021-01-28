@@ -48,7 +48,7 @@ class SitTerm(Term): #
             return None
         return self.args[0]
 
-    def terms(self, sort="any"):
+    def terms(self, sort="any", skip_s=False):
         """ Overrides that of Term, only returns top-level sit
             This is a sort of a hack introduced to make work the notion of "regressable to sigma".
             This may mess things up. If it does, consider removing this hack
@@ -56,12 +56,19 @@ class SitTerm(Term): #
               \phi is regressable to sigma if, when all occurrences of sigma are simultaneously replaced by S_0,
               the result is simply regressable (as per Reiter)
             Currently, this implementation requires that ACTIONS NOT CARRY FLUENTS IN ARGUMENTS!!!!
+            If skip_s, do not yield situation terms, but do yield their contents (all nested actions).
+              Usage: first situation encountered yields self, but recursively returns with skip_s = True
         """
-        if sort == "any" or self.sort == sort:
+        #print(f"Returning terms for {self.tex()}, skip_s={skip_s}")
+        if (sort == "any" or self.sort == sort) and not skip_s:
             yield self
-        l_a = self.last_action()
-        if not l_a is None:
-            yield from l_a.terms(sort=sort)
+        a = self.last_action()
+        s = self.previous_sit()
+        if not a is None:
+            yield from a.terms(sort=sort)
+        if not s is None:
+            #print(f"Nested sit term {s.tex()} ({s.__class__}), will try not to yield it")
+            yield from s.terms(sort=sort, skip_s=True)
 
 class Do(SitTerm):
     def __init__(self, action_term, sit_term):
@@ -215,7 +222,7 @@ class RelSSA(SSA):
 
         #self.obj_vars = obj_vars
         self.lhs = RelFluent(fluent.name, *lhs_atom_args)
-        print(f"CREATING SSA LHS: {self.lhs.args}")
+        #print(f"CREATING SSA LHS: {self.lhs.args}")
         self.rhs = None # Will be built in _build_formula()
         self.univ_vars = self.lhs.obj_args + (TERM['a'], TERM['s'],)
         self.frame_atom = RelFluent(fluent.name, *rhs_atom_args)
