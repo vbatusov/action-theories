@@ -59,6 +59,9 @@ class SitTerm(Term): #
         """
         if sort == "any" or self.sort == sort:
             yield self
+        l_a = self.last_action()
+        if not l_a is None:
+            yield from l_a.terms(sort=sort)
 
 class Do(SitTerm):
     def __init__(self, action_term, sit_term):
@@ -432,6 +435,22 @@ class FuncSSA(SSA):
     def tex(self):
         return self.formula.tex()
 
+class RegressionTracker(object):
+    """ A container for stuff related to each top-level regression invokation """
+    def __init__(self, query):
+        self.known_vars = query.vars()
+        self.counters_by_name = {}
+
+    def fresh_var(self, basename, sort):
+        """ Returns a variable of sort 'sort' named f'{basename}_N' where N is an integer picked such that this name is not in 'vars'"""
+        if basename not in self.counters_by_name:
+            self.counters_by_name[basename] = 1
+
+        while True:
+            var = Term(Symbol(f"{basename}_{{{self.counters_by_name[basename]}}}", sort=sort, is_var=True))
+            self.counters_by_name[basename] += 1
+            if not var in self.known_vars:
+                return var
 
 class BasicActionTheory(Theory):
     """ Predetermined sorts and general syntactic form:
@@ -440,16 +459,6 @@ class BasicActionTheory(Theory):
     def __init__(self, name):
         Theory.__init__(self, name, sorts=["action", "situation"], subsets=["S_0", "rss", "fss", "ap"]) # una and \Sigma are standard
         self.actions = [] # keeps track of all action symbols included in the theory
-
-    def fresh_var(self, vars, basename, sort):
-        """ Returns a variable of sort 'sort' named f'{basename}_N' where N is an integer picked such that this name is not in 'vars'"""
-        i = 1
-        while True:
-            var = Term(Symbol(f"{basename}_{{{i}}}", sort=sort, is_var=True))
-            if var not in vars:
-                print(Back.MAGENTA + f"FRESH VARIABLE {var.tex()}" + Style.RESET_ALL)
-                return var
-            i += 1
 
     def prime_ffluent(self, w):
         """ Returns a prime functional fluent mentioned in w (if any)
@@ -572,9 +581,10 @@ class BasicActionTheory(Theory):
         """ Safe regression: check for regressability first """
         if not self.is_regressable_to(w, sitterm):
            raise Exception(f"Formula {w.tex()} is not regressable to {sitterm}")
-        return self._rho(w, sitterm) #.simplified()
+        tracker = RegressionTracker(w)
+        return self._rho(w, sitterm, tracker) #.simplified()
 
-    def _rho(self, w, sitterm, depth=0):
+    def _rho(self, w, sitterm, tr, depth=0):
         """ Implements \\rho_{sitterm}[formula], the Partial Regression Operator from Definition 11.
             In:
               w: a sitcalc formula (hopefully regressable to sitterm (Defn. 10), will check in code)
@@ -582,8 +592,6 @@ class BasicActionTheory(Theory):
             Out:
               a new formula, which is the result of regressing given formula bacwards to sitterm using the SSA and APA owned by self.
         """
-        # Just in case, a defensive deep copy
-        #w = copy.deepcopy(w)
         prefix = "  "*depth
         printd(f"{prefix}Regressing {w.tex()} to term {sitterm.tex()}")
 
@@ -591,40 +599,32 @@ class BasicActionTheory(Theory):
 
         if isinstance(w, Neg):
             printd(f"{prefix}Negation, going in...")
-            return Neg(self._rho(w.formula, sitterm, depth=depth+1)) #.simplified()
+            return Neg(self._rho(w.formula, sitterm, tr, depth=depth+1)) #.simplified()
         elif isinstance(w, Junction):
             printd(f"{prefix}Junction, going in...")
-            return w.__class__(*[self._rho(f, sitterm, depth=depth+1) for f in w.formulas]) #.simplified()
+            return w.__class__(*[self._rho(f, sitterm, tr, depth=depth+1) for f in w.formulas]) #.simplified()
         elif isinstance(w, Quantified):
             printd(f"{prefix}Quantified, going in...")
-            return w.__class__(w.var, self._rho(w.formula, sitterm, depth=depth+1)) #.simplified()
+            return w.__class__(w.var, self._rho(w.formula, sitterm, tr, depth=depth+1)) #.simplified()
         else: # Some sort of an atom
             printd(f"{prefix}Some sort of an atom...")
             if isinstance(w, PossAtom):  # More stringent checks are in is_regressable
                 printd(f"{prefix}Poss atom! Replacing by rhs!")
                 # instantiate rhs of APA wrt to atom's args, regress that
-                return self._rho(self.instantiate_ap_rhs(w), sitterm, depth=depth+1) #.simplified()
+                return self._rho(self.instantiate_ap_rhs(w), sitterm, tr, depth=depth+1) #.simplified()
             elif w.uniform_in(sitterm): # Uniform in sitterm
                 printd(f"{prefix}Uniform in {sitterm}," + Back.CYAN + " end of branch." + Style.RESET_ALL)
                 return w #.simplified() # Terminal clause
             elif prime_fluent is not None: # Has a prime func. fluent
                 printd(f"{prefix}Mentions a prime functional fluent {prime_fluent.tex()}")
-                # In W, replace the fluent by a new variable y_n (1)
                 w2 = copy.deepcopy(w)
-                #var = self.fresh_var(w.vars(), "y", prime_fluent.sort)
-                var = fresh_var("y", prime_fluent.sort)
-                #print(f"Will use new \\exists variable {var.tex()}")
+                var = tr.fresh_var("y", prime_fluent.sort)
                 w2.replace_term(prime_fluent, var)
-                #print(f"Replacing fluent by var in query: {w2.tex()}")
-                # instantiate RHS of fluent's ssa with fluent's arguments, inc. variable y_n (2)
                 inst_rhs = self.instantiate_fssa_rhs(prime_fluent, var)
-                #print(f"Instantiated RHS: {inst_rhs.tex()}")
-                # return 'exists y_n ((1) \land (2)) '
-                return Exists(var, self._rho(And(inst_rhs, w2), sitterm, depth=depth+1)) # use func. SSA
+                return Exists(var, self._rho(And(inst_rhs, w2), sitterm, tr, depth=depth+1)) # use func. SSA
             elif isinstance(w, RelFluent): # Relational fluent atom
                 printd(f"{prefix}A relational fluent atom")
-                #raise Exception(f"{prefix}Rel. fluents not implemented")
-                return self._rho(self.instantiate_rssa_rhs(w), sitterm, depth=depth+1) #.simplified()
+                return self._rho(self.instantiate_rssa_rhs(w), sitterm, tr, depth=depth+1) #.simplified()
             else:
                 raise Exception(f"Unable to regress {w.tex()} to term {sitterm.tex()}!!")
 
@@ -673,10 +673,3 @@ TERM["a"] = Term(SYM["a"])
 TERM["S_0"] = SitTerm(SYM["S_0"])
 TERM["s"] = SitTerm(SYM["s"])
 TERM["do(a,s)"] = Do(TERM["a"], TERM["s"])
-
-y_counter = 0
-def fresh_var(basename, sort):
-    """ Returns a variable of sort 'sort' named f'{basename}_N' where N is an integer picked such that this name is not in 'vars'"""
-    global y_counter
-    y_counter += 1
-    return Term(Symbol(f"{basename}_{{{y_counter}}}", sort=sort, is_var=True))

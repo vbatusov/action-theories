@@ -189,8 +189,7 @@ for query in q:
     print(f"&{simp.tex()}")
     print("\\end{align*}")
 
-# Implement BAT.situations() to iterate through the entire infinite tree of situations
-# Finish regression and test on a ground situation term
+
 # Semantics
 # At this point, will be able to implement actual cause analysis
 # Extend to hybrid case, with both FO and SO SEA

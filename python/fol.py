@@ -92,19 +92,6 @@ class Struct:
         self.name = name
         self.symbol.name = name
 
-    # Deprecated
-    # def iter_structs(self): # All Atoms and Terms
-    #     yield self
-    #     for arg in self.args:
-    #         for struct in arg.iter_structs():
-    #             yield struct
-
-    # Deprecated
-    # def iter_vars(self): # All Terms with is_var
-    #     for struct in self.iter_structs():
-    #         if struct.symbol.is_var:
-    #             yield struct
-
     def symbols(self):
         yield self.symbol
         for arg in self.args:
@@ -142,8 +129,6 @@ class Term(Struct): #
         for arg in args:
             if not isinstance(arg, Term):
                 raise TypeError(f"Argument {arg} is not a Term!")
-        #if symbol.name == "=":
-        #    print("***Constructing and equality atom***")
         Struct.__init__(self, symbol, *args)
         self.is_var = symbol.is_var
 
@@ -295,17 +280,12 @@ class Formula(object):
         for (o,n) in zip(old, new):
             if o.sort != n.sort:
                 raise Exception("Sort mismatch in substitution")
-        # find all terms (inc. nested) in 'new'
-        #print(f"Source: {', '.join([o.tex() for o in old])}")
+
         vars_in_new = set(t for v in new for t in v.vars())
-        #print(f"Vars in new:", "; ".join([t.tex() for t in vars_in_new]))
-        # find which ones are also members of 'old' -> set of collisions
         vars_in_old = set(old)
         rhs_vars = set(result.vars())
         all_vars = vars_in_old.union(vars_in_new.union(rhs_vars))
         collisions = vars_in_old.intersection(vars_in_new)
-        #print(f"All vars:", "; ".join([t.tex() for t in all_vars]))
-        #print(f"Collisions:", "; ".join([t.tex() for t in collisions]))
         # for each collision,
         for c in collisions:
         #  - generate a fresh name (not in either terms_in_new or old)
@@ -315,13 +295,10 @@ class Formula(object):
                 #print("Finding name...")
                 c_new.rename(f"{c.name}_{{i}}")
                 i += 1
-            #print(f"Renaming {c.tex()} to {c_new.tex()}")
         #  - rename variable in 'result'
             result.replace_term(c, c_new)
         #  - rename source variable in rule accordingly
             old = [c_new if v == c else v for v in old]
-        #print(f"RHS copy ready: {result.tex()}")
-        #print(f"Source: {', '.join([o.tex() for o in old])}")
         # apply the substitutions without fear of messing up
         for (src, tgt) in zip(old, new):
             result.replace_term(src, tgt)
@@ -334,24 +311,10 @@ class Formula(object):
     def is_sentence(self):
         return not [v for v in self.free_vars()]
 
-    # def occurs_standalone(self, term):
-    #     """ True if term occurs alone as an argument of an atom """
-    #     for sigma in self.terms(sort="situation"):
-    #         skip = True # skip if sigma is a sub-situation and not a stand-alone argument of an atom
-    #         for atom in w.atoms():
-    #             if sigma in atom.args:
-    #                 skip = False
-    #         if skip:
-    #             continue
-    #
-    #         s = sigma
-
-
     def uniform_in(self, term):
         """ True iff, in self, every term of sort term.sort is term. """
         for t in self.terms(sort=term.sort):
             if term != t:
-                #print(f"Formula {self.tex()} is not uniform in {term.tex()} because it contains term {t.tex()}")
                 return False
         return True
 
@@ -360,8 +323,7 @@ class Formula(object):
             print("I am a sentence {}".format(self.tex()))
         else:
             print("I am an open formula {}".format(self.tex()))
-        #print("  My variables (in order of appearance): {}".format(", ".join([v.tex() for v in self.vars()])))
-        #print("  My non-free variables: {}".format(", ".join([v.tex() for v in self.nonfree_vars()])))
+
         free = ", ".join([v.tex() for v in self.free_vars()])
         nonfree = ", ".join([v.tex() for v in self.nonfree_vars()])
         (free, nonfree) = tuple(["none" if x == "" else x for x in (free, nonfree)])
@@ -389,12 +351,6 @@ class Atom(Formula, Struct):
 
     def __eq__(self, other):
         return isinstance(other, Atom) and ((self.symbol, self.args) == (other.symbol, other.args))
-    # Having free_vars and non_free vars requires duplication of logic
-    # Better define vars and nonfree_vars, and get free_vars by difference
-    # def vars(self): # generator
-    #     # All variables in an atom are free
-    #     yield from self.iter_vars()
-    # THis is now handled by Formula's vars which relies on self.terms, which works really well.
 
     def nonfree_vars(self): # generator
         return # It's an atom
@@ -439,7 +395,6 @@ class EqAtom(Atom):
         Atom.__init__(self, symbol, *args)
 
     def simplified(self):
-        #print(Back.MAGENTA + "EqAtom simplification!" + Style.RESET_ALL)
         lhs = self.args[0]
         rhs = self.args[1]
         if lhs.symbol.unique_name and rhs.symbol.unique_name:
@@ -548,23 +503,21 @@ class And(Junction):
     def simplified(self):
         """ Returns a shallow syntactic simplification of self """
         # Empty conjunctions are now ruled out in constructor.
-        #if len(self.formulas) == 1:
-        #    return self.formulas[0].simplified()
-
         # In the beginning, god gathered all conjuncts under one roof.
         s_conjuncts = [] # self.formulas except for those which are themselves conjunctions, get those instead
+
+        def unique_append(formula, list):
+            """ Adds a non-trivial conjunct to a list, ignores trivial """
+            if formula not in list and not isinstance(formula, Tautology):
+                list.append(formula)
+
         for f in self.formulas:
             f_s = f.simplified() # if f is conjunction, then f_s is a flat conjunction
             if isinstance(f_s, And): # if f was unary, then f_s is either non-unary or not a conjunction
                 for f2 in f_s.formulas: # f2 is an already-simplified nested conjunct
-                    if f2 not in s_conjuncts and not isinstance(f2, Tautology):
-                        s_conjuncts.append(f2)
-                    # else skip it
+                    unique_append(f2, s_conjuncts)
             else:
-                if f_s not in s_conjuncts and not isinstance(f_s, Tautology):
-                    s_conjuncts.append(f_s)
-
-        #At this point, s_conjuncts
+                unique_append(f_s, s_conjuncts)
 
         for f in s_conjuncts:
             if isinstance(f, Contradiction):
@@ -588,22 +541,30 @@ class Or(Junction):
 
     def simplified(self):
         """ Returns a shallow syntactic simplification of self """
-        if len(self.formulas) == 1:
-            return self.formulas[0].simplified()
 
-        new_formulas = []
+        s_disjuncts = []
+
+        def unique_append(formula, list):
+            """ Adds a non-trivial disjunct to a list, ignores trivial """
+            if formula not in list and not isinstance(formula, Contradiction):
+                list.append(formula)
+
         for f in self.formulas:
-            tmp = f.simplified()
-            if isinstance(tmp, Contradiction):
-                pass
-            elif isinstance(tmp, Tautology):
-                return tmp
-            elif isinstance(tmp, Or): # flatten nested disjunctions
-                new_formulas += tmp.formulas
+            f_s = f.simplified() # if f is disjunction, then f_s is a flat disjunction
+            if isinstance(f_s, Or): # if f was unary, then f_s is either non-unary or not a disjunction
+                for f2 in f_s.formulas: # f2 is an already-simplified nested conjunct
+                    unique_append(f2, s_disjuncts)
             else:
-                new_formulas.append(tmp)
+                unique_append(f_s, s_disjuncts)
 
-        return Or(*new_formulas)
+        for f in s_disjuncts:
+            if isinstance(f, Tautology):
+                return f
+
+        if len(s_disjuncts) == 1: # may still end up with a single conjunct!
+            return s_disjuncts[0]
+
+        return Or(*s_disjuncts)
 
     def tex(self):
         texes = [f"({f.tex()})" if isinstance(f, And) else f.tex() for f in self.formulas]
@@ -757,8 +718,7 @@ class Exists(Quantified):
             elif len(f_outscope) > 0: # some inscope, some out
                 juncts = f_outscope + [Exists(copy.deepcopy(self.var), f_simplified.__class__(*f_inscope))]
                 return f_simplified.__class__(*juncts).simplified()
-            else: # all inscope, fall back on default return
-                # EXPERIMENTAL
+            else: # all in scope
                 if isinstance(f_simplified, And) and len(f_simplified.formulas) > 1: # if a non-unary conjunction
                     term = None # Term to replace self.var in rest
                     rest = [] # Rest of conjuncts, to be preserved after replacing self.var by rest
@@ -771,16 +731,10 @@ class Exists(Quantified):
                             rest.append(conj)
                     if not term is None and len(rest) > 0:
                         # Get rid of the equality and substitute term for self.var in the rest
-                        #print(f"Experimental: in expression \\exists {self.var.tex()} {f_simplified.tex()},")
-                        #print(f"Will remove \\exists, EqAtom and replace {self.var.tex()} by {term.tex()}")
                         for r in rest:
                             r.replace_term(self.var, term)
-                        #print(f"Remaining atoms:", ", ".join([str(s) for s in rest]))
                         return And(*rest).simplified()
                     # else, fall back on default return
-
-
-
         elif isinstance(f_simplified, EqAtom) and (self.var in f_simplified.args):
             # Also experimental
             # Purpose: eliminate trivial statements \exists x(x = TERM)
