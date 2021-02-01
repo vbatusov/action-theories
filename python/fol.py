@@ -88,6 +88,9 @@ class Struct:
             return True
         return False
 
+    def is_atomic(self):
+        return (len(self.args) == 0)
+
     def rename(self, name):
         self.name = name
         self.symbol.name = name
@@ -195,6 +198,10 @@ class Formula(object):
 
     def __eq__(self, other):
         return False # Catch-all
+
+    def flatten(self, varsrc):
+        """ Default case. All formulas that CAN be flattened must implement their own way. """
+        return copy.deepcopy(self)
 
     def simplified(self):
         """ Catch-all for formulas that don't have their own simplification method """
@@ -333,9 +340,15 @@ class Tautology(Formula):
     def tex(self):
         return "\\top"
 
+    def eval(self, semantics):
+        return True # Tautology is always true no matter what semantics is used
+
 class Contradiction(Formula):
     def tex(self):
         return "\\bot"
+
+    def eval(self, semantics):
+        return False
 
 class Atom(Formula, Struct):
     """ Atomic formula """
@@ -351,6 +364,36 @@ class Atom(Formula, Struct):
 
     def __eq__(self, other):
         return isinstance(other, Atom) and ((self.symbol, self.args) == (other.symbol, other.args))
+
+    def flatten(self, varsrc):
+        """ Returns an equivalent, but flattened version of self.
+            By flatten I mean no complex functional terms as arguments of either functions or fluents.
+            Needed to convert functions to predicates for Prolog.
+        """
+        #print(f"Flattening Atom {self.tex()}")
+        new_atom = copy.deepcopy(self)
+        i = -1
+
+        for j in range(0, len(new_atom.args)):
+            if not new_atom.args[j].is_atomic():
+                i = j
+                break
+
+        if i >= 0:
+            new_var = varsrc.new("z", new_atom.args[i].sort)
+            old_term = new_atom.args[i]
+            new_atom.args[i] = new_var
+            existential = Exists(new_var, And(new_atom, EqAtom(new_var, old_term)))
+            #print(f"Replacing {old_term.tex()} by {new_var.tex()}, creating an existential {existential.tex()}, flattening it recursively.")
+            return existential.flatten(varsrc)
+
+        return new_atom
+
+
+    def eval(self, semantics):
+        """ TODO: atoms not covered by EqAtom and RelFluents """
+        return semantics.eval_atom(self)
+
 
     def nonfree_vars(self): # generator
         return # It's an atom
@@ -394,6 +437,52 @@ class EqAtom(Atom):
         symbol = Symbol("=", sorts=[args[0].sort]*2) # Might have to exclude this from theory's vocabulary
         Atom.__init__(self, symbol, *args)
 
+    def eval(self, semantics):
+        return semantics.eval_equality(self)
+
+    def flatten(self, varsrc):
+        """ Equality atoms are where former complex atom terms end up.
+            End state of an equality atom is
+              x = f(y) where all y are atomic
+        """
+        #print(f"Flattening equality {self.tex()}")
+        new_eq = copy.deepcopy(self)
+
+        # Both sides are atomic, nothing to do
+        if new_eq.args[0].is_atomic() and new_eq.args[1].is_atomic():
+            #print(f"Need not flatten {new_eq.tex()}, both sides atomic")
+            return new_eq
+
+        # Both sides are non-atomic, so must break into two equalities
+        if not new_eq.args[0].is_atomic() and not new_eq.args[1].is_atomic():
+            new_var = varsrc.new("z", new_eq.args[0].sort)
+            return (Exists(new_var, And(EqAtom(new_eq.args[0], new_var), EqAtom(new_var, new_eq.args[1])))).flatten(varsrc)
+
+        # Finally, check if one side's aguments must be flattened
+        # First, decide which side is non-atomic
+        i = 0
+        if new_eq.args[i].is_atomic():
+            i = 1
+
+        #print(f"  Part {new_eq.args[i]} is non-atomic")
+        # args[i] is non-atomic
+        # Go over ITS arguments and eliminate them just like with the Atom case
+        k = -1  # number of self.args[i].args member to be eliminated
+        for j in range(0, len(new_eq.args[i].args)):
+            if not new_eq.args[i].args[j].is_atomic():
+                k = j
+                break
+
+        if k >= 0: # found a term argument to eliminate
+            #print(f"    Argument {new_eq.args[i].args[k]} must be flattened out!")
+            new_var = varsrc.new("z", new_eq.args[i].args[k].sort)
+            old_term = new_eq.args[i].args[k]
+            new_eq.args[i].args[k] = new_var
+            return (Exists(new_var, And(new_eq, EqAtom(new_var, old_term)))).flatten(varsrc)
+        else:
+            #print(f"    Side has no arguments to worry about!")
+            return new_eq
+
     def simplified(self):
         lhs = self.args[0]
         rhs = self.args[1]
@@ -415,6 +504,13 @@ class Neg(Formula): # negation
 
     def __eq__(self, other):
         return isinstance(other, Neg) and (self.formula == other.formula)
+
+    def eval(self, semantics):
+        """ TODO: atoms not covered by EqAtom and RelFluents """
+        return not(semantics.eval_query(self))
+
+    def flatten(self, varsrc):
+        return Neg(self.formula.flatten(varsrc))
 
     def simplified(self):
         """ Returns a shallow syntactic simplification of self """
@@ -495,6 +591,15 @@ class And(Junction):
         else:
             Junction.__init__(self, *formulas)
 
+    def flatten(self, varsrc):
+        return And(*[f.flatten(varsrc) for f in self.formulas])
+
+    def eval(self, semantics):
+        for f in self.formulas:
+            if not semantics.eval_query(f): # If any of the conjuncts is false, the whole thing is
+                return False
+        return True
+
     def add(self, formula):
         """ Add a conjunct. If already there, do nothing """
         if formula not in self.formulas:
@@ -539,6 +644,16 @@ class Or(Junction):
         else:
             Junction.__init__(self, *formulas)
 
+    def flatten(self, varsrc):
+        return Or(*[f.flatten(varsrc) for f in self.formulas])
+
+
+    def eval(self, semantics):
+        for f in self.formulas:
+            if semantics.eval_query(f): # If any of the disjuncts is true, the whole thing is
+                return True
+        return False
+
     def simplified(self):
         """ Returns a shallow syntactic simplification of self """
 
@@ -576,6 +691,14 @@ class Implies(Junction):
             raise Exception("Implication must be binary!")
         Junction.__init__(self, *formulas)
 
+    def flatten(self, varsrc):
+        return Implies(*[f.flatten(varsrc) for f in self.formulas])
+
+    def eval(self, semantics):
+        if semantics.eval_query(self.formulas[0]) and not semantics.eval_query(self.formulas[1]): # If any of the disjuncts is true, the whole thing is
+                return False
+        return True
+
     def simplified(self):
         """ Returns a shallow syntactic simplification of self """
         premise = self.formulas[0].simplified()
@@ -601,6 +724,14 @@ class Iff(Junction):
         if len(formulas) != 2:
             raise Exception("Bidirectional implication must be binary!")
         Junction.__init__(self, *formulas)
+
+    def flatten(self, varsrc):
+        return Iff(*[f.flatten(varsrc) for f in self.formulas])
+
+    def eval(self, semantics):
+        if semantics.eval_query(self.formulas[0]) != semantics.eval_query(self.formulas[1]):
+                return False
+        return True
 
     def simplified(self):
         """ Returns a shallow syntactic simplification of self """
@@ -673,6 +804,12 @@ class Forall(Quantified):
     def __init__(self, var, formula):
         Quantified.__init__(self, var, formula)
 
+    def eval(self, semantics):
+        return semantics.eval_forall(self)
+
+    def flatten(self, varsrc):
+        return Forall(copy.deepcopy(self.var), self.formula.flatten(varsrc))
+
     def simplified(self):
         """ Returns a shallow syntactic simplification of self
             Don't bother simplifying quantifiers for now """
@@ -695,6 +832,15 @@ class Exists(Quantified):
     """ \\exists var (formula) """
     def __init__(self, var, formula):
         Quantified.__init__(self, var, formula)
+
+    def eval(self, semantics):
+        return semantics.eval_exists(self)
+
+    def flatten(self, varsrc):
+        new_var = copy.deepcopy(self.var)
+        new_f = self.formula.flatten(varsrc)
+        #print(f"Flattening {self.tex()}: new var {new_var.tex()}, new sub {new_f.tex()}")
+        return Exists(new_var, new_f)
 
     def simplified(self):
         """ Returns a shallow syntactic simplification of self
@@ -719,17 +865,25 @@ class Exists(Quantified):
                 juncts = f_outscope + [Exists(copy.deepcopy(self.var), f_simplified.__class__(*f_inscope))]
                 return f_simplified.__class__(*juncts).simplified()
             else: # all in scope
+                #print(f"All in scope for {self.tex()}")
                 if isinstance(f_simplified, And) and len(f_simplified.formulas) > 1: # if a non-unary conjunction
+                    #print("  Non-unary conjunction")
                     term = None # Term to replace self.var in rest
                     rest = [] # Rest of conjuncts, to be preserved after replacing self.var by rest
+                    found_elim = False
                     for conj in f_simplified.formulas:
-                        if isinstance(conj, EqAtom) and self.var in conj.args: # and if there is an equality atom about self.var
+                        if isinstance(conj, EqAtom) and self.var in conj.args and not found_elim: # and if there is an equality atom about self.var
+                            #print(f"    There is an equality atom about self.var")
                             term = conj.args[0]
                             if term == self.var:
                                 term = conj.args[1]  # Get the term on the other side of the equality
+                            #print(f"      term becomes {term.tex()}")
+                            found_elim = True
                         else: # not an equality conjunct, store it
                             rest.append(conj)
+                    #print(f"    Ended up with term={term} and rest={rest}")
                     if not term is None and len(rest) > 0:
+                        #print(f"    About to replace {self.var.tex()} by {term.tex()}")
                         # Get rid of the equality and substitute term for self.var in the rest
                         for r in rest:
                             r.replace_term(self.var, term)
@@ -826,3 +980,22 @@ class Theory:
         print("Vocabulary of theory '{}':".format(self.name))
         for s_n, s in self.vocabulary.items():
             print("  \t{}".format(str(s)))
+
+
+
+class VarSource(object):
+    """ A source of fresh variables of whatever sort;
+        useful when accessed from multiple namespaces """
+    def __init__(self):
+        self.sorts = {} # basename -> sort (only one sort per basename)
+        self.counts = {} # basename -> count
+
+    def new(self, basename="z", sort="object"):
+        if basename not in self.sorts:
+            if basename in self.counts:
+                raise Exception("Var source integrity violation")
+            self.sorts[basename] = sort
+            self.counts[basename] = 1
+        var = Term(Symbol(f"{basename}_{{{self.counts[basename]}}}", sort=sort, is_var=True))
+        self.counts[basename] += 1
+        return var

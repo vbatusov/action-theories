@@ -450,9 +450,57 @@ class FormulaBuilding(unittest.TestCase):
         import semantics
 
         bw.bat.describe()
-        sem = semantics.Semantics(bw.bat.axioms["S_0"])
-        query = RelFluent("clear", UConst("D"), TERM["S_0"])
-        print(f"{query.tex()} evaluates to {sem.eval(query)}")
+        sem = semantics.Semantics(bw.bat)
+        #query = RelFluent("clear", UConst("D"), TERM["S_0"])
+        q = []
+        #q.append(EqAtom(UConst("A"), UConst("B")))
+        #q.append(EqAtom(ObjFluent("on", bw.A, TERM["S_0"]), UConst("B")))
+        #q.append(EqAtom(UConst("B"), ObjFluent("on", bw.A, TERM["S_0"])))
+        q.append(EqAtom(ObjFluent("on", bw.B, TERM["S_0"]), ObjFluent("on", bw.A, TERM["S_0"])))
+
+        query = And(*q)
+
+        # Standard procedure for computing entailment!!!
+        # Regress to S_0
+        f1 = bw.bat.rho(query, TERM["S_0"])
+        # Suppress situations
+        f2 = bw.bat.suppress_s(f1)
+        # Flatten with a new var source
+        f3 = f2.flatten(VarSource())
+        # Now, ready for evaluation
+        answer = sem.eval_query(f3)
+
+        print(f"{query.tex()} transformed to {f3.tex()} evaluates to {answer}")
+
+
+
+    def test_formula_transformations(self):
+        import blocksworld as bw
+        sigma_1 = Do(ActionTerm("move", bw.C, bw.T), bw.S_0)
+        sigma_2 = Do(ActionTerm("noop"), sigma_1)
+        sigma_3 = Do(ActionTerm("move", bw.A, bw.B), sigma_2)
+        #sigma_4 = Do(ActionTerm("move", , ), sigma)
+        q = []
+        q.append(EqAtom(bw.B, ObjFluent("on", bw.A, sigma_3)))
+        q.append(RelFluent("clear", ObjFluent("on", ObjFluent("on", bw.C, sigma_3), sigma_3), sigma_2))
+        q.append(Neg(StaticAtom("happy", UConst("cat"))))
+        q.append(Neg(EqAtom(ObjTerm("brotherOf", bw.B), ObjTerm("brotherOf", bw.C))))
+        query = And(*q)
+        print(f"\nQuery: ${query.tex()}$")
+
+        # Suppress sit terms
+        sup = bw.bat.suppress_s(query)
+        print(f"\nSuppressed: ${sup.tex()}$")
+
+        # Flatten
+        fla = sup.flatten(VarSource())
+        print(f"\nFlattened: ${fla.tex()}$")
+
+        simp = fla.simplified_stable()
+        print(f"\nSimplified, just for giggles: ${simp.tex()}$")
+
+        # All works, fixed some bugs
+
 
 
 if __name__ == '__main__':

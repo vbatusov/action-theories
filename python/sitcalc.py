@@ -6,6 +6,7 @@ from colorama import Fore, Back, Style  # Pretty printing
 #         operations which only make sense in situation calculus """
 #     def __init__(self, )
 
+
 class UConst(Term):
     """ A constant (0-ary function) with a unique name """
     def __init__(self, name, sort="object"):
@@ -14,6 +15,15 @@ class UConst(Term):
 class ObjVar(Term):
     def __init__(self, name):
         Term.__init__(self, Symbol(name, sort="object", is_var=True))
+
+class ObjTerm(Term):
+    def __init__(self, name, *args):
+        Term.__init__(self, Symbol(name, sorts=[s.sort for s in args], sort="object"), *args)
+
+class StaticAtom(Atom):
+    # "happy", UConst("cat")
+    def __init__(self, name, *args):
+        Atom.__init__(self, Symbol(name, sorts=[s.sort for s in args]), *args)
 
 class ActionTerm(Term):
     def __init__(self, name, *args):
@@ -105,6 +115,10 @@ class Fluent(object):
             raise Exception("A Fluent must have exactly one sit. argument, which must be at the end.")
         self.arg_sorts = arg_sorts
 
+    def suppress_s(self):
+        self.symbol.sorts = self.symbol.sorts[:-1]
+        self.args = self.args[:-1]
+
 class RelFluent(Atom, Fluent):
     """ Relational fluent atom
         creates symbol internally; infers sorts from object arguments
@@ -112,6 +126,10 @@ class RelFluent(Atom, Fluent):
     def __init__(self, name, *args):
         Fluent.__init__(self, name, *args)
         Atom.__init__(self, Symbol(name, sorts=self.arg_sorts), *args)
+
+    def eval(self, semantics):
+        """ Returns the truth value of self according to provided semantics """
+        return semantics.eval_relational_fluent(self) # funny reversal
 
 class FuncFluent(Term, Fluent):
     def __init__(self, name, sort, *args):
@@ -483,6 +501,7 @@ class BasicActionTheory(Theory):
             #print("no")
         return None
 
+
     def get_apa_by_poss(self, poss_atom):
         if not isinstance(poss_atom, PossAtom):
             raise TypeError(f"{poss_atom.tex()} is not a proper PossAtom!")
@@ -525,6 +544,21 @@ class BasicActionTheory(Theory):
     # self.instantiate_fssa_rhs(prime_fluent, var)
     def instantiate_fssa_rhs(self, fluent_term, y):
         return self.get_fssa_by_term(fluent_term).instantiate_rhs(fluent_term, y)
+
+    def suppress_s(self, formula): # Perhaps not the best place for this, but I can't think of the best.
+        sup = copy.deepcopy(formula)
+
+        for atom in sup.atoms():
+            if atom.symbol == SYM["Poss"]:
+                raise Exception("Can't suppress situation argument in a formula containing a Poss atom!! Try regressing it first.")
+            if isinstance(atom, RelFluent):
+                atom.suppress_s()
+
+        for term in sup.terms():
+            if isinstance(term, FuncFluent):
+                term.suppress_s()
+
+        return sup
 
     def is_regressable_to(self, w, rootsit):
         """ Returns true iff formula is regressable to rootsit as per defn. 10 in thesis:

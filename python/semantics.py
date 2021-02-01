@@ -1,29 +1,36 @@
 from fol import *
 from sitcalc import *
 import pyswip
+from tabulate import tabulate
 
 class Semantics(object):
     """ Gets a sit. calc. initial theory, converts to Prolog clauses (if possible),
         Answers queries about KB.
     """
-    def __init__(self, init_theory):
+    def __init__(self, bat):
         """ Convert theory to Prolog clauses (if Horn)
             init_theory is BasicActionTheory.axioms["S_0"]
         """
         #self.symbol_map = {} # From
+        print("*"*65)
         print("Please verify the resulting clauses against the initial theory!")
         print("This semantics is experimental and incomplete!")
-        self.kb = self.create_kb(init_theory)
+        print("REMEMBER: Domain Closure and Negation as Failure are in effect!\n")
+        self._translation = [] # Just a _translation table from TeX to Prolog for display purposes
+        self._kb = self._create_kb(bat)
+        print(tabulate(self._translation, headers=["Supplied axiom", "Generated prolog clause"]))
+        print()
+        print("*"*65)
 
-    def create_kb(self, init_theory):
+    def _create_kb(self, bat):
         kb = pyswip.Prolog()
-        for axiom in init_theory:
-            self.add_axiom(axiom, kb)
+        for axiom in bat.axioms["S_0"]:
+            self._add_axiom(bat, axiom, kb)
         return kb
 
 
-    def add_axiom(self, axiom, kb):
-        formula = axiom.formula
+    def _add_axiom(self, bat, axiom, kb):
+        formula = bat.suppress_s(axiom.formula)
         if len(tuple(formula.vars())) > 0:
             raise Exception("Can't process formulas with variables!")
 
@@ -38,59 +45,96 @@ class Semantics(object):
                 raise Exception(f"Can't equate two non-constant terms {lhs.tex()} and {rhs.tex()}")
 
             #print(f"  Translates to {translate_eq(lhs, rhs)}")
-            kb.assertz(translate_eq(lhs, rhs))
+            rule = translate_equality(lhs, rhs)
+            kb.assertz(rule)
+            self._translation.append([axiom.formula.tex(), rule])
 
         elif isinstance(formula, Atom):
             #print(f"  Translates to {translate_atom(formula)}")
-            kb.assertz(translate_atom(formula))
+            rule = translate_atom(formula)
+            kb.assertz(rule)
+            self._translation.append([axiom.formula.tex(), rule])
 
         elif isinstance(formula, Neg):
-            pass #print("Skipping negation! Relying on Negation As Failure.")
+            self._translation.append([axiom.formula.tex(), "-"])
         elif isinstance(formula, Junction):
-            pass #print("Non-atomic formulas not implemented!")
+            self._translation.append([axiom.formula.tex(), "-"])
         else:
-            raise Exception(f"Unrecognized formula {formula.tex()} ({formula.__class__})")
-
-    def convert_query(self, formula):
-        """ Only atoms and equalities for now """
-        if isinstance(formula, EqAtom):
-            #print("Equality atom")
-            (lhs, rhs) = formula.args
-            if isinstance(lhs, UConst) and isinstance(rhs, UConst):
-                raise Exception(f"Can't equate two distinct constants {lhs.tex()} and {rhs.tex()}")
-            elif not isinstance(lhs, UConst) and not isinstance(rhs, UConst):
-                raise Exception(f"Can't equate two non-constant terms {lhs.tex()} and {rhs.tex()}")
-
-            #print(f"  Translates to {translate_eq(lhs, rhs)}")
-            return translate_eq(lhs, rhs)
-
-        elif isinstance(formula, Atom):
-            #print(f"  Translates to {translate_atom(formula)}")
-            return translate_atom(formula)
-
-        elif isinstance(formula, Neg):
-            pass #print("Skipping negation! Relying on Negation As Failure.")
-        elif isinstance(formula, Junction):
-            pass #print("Non-atomic formulas not implemented!")
-        else:
-            raise Exception(f"Unrecognized formula {formula.tex()} ({formula.__class__})")
+            raise Exception(f"Unrecognized formula {axiom.formula.tex()} ({axiom.formula.__class__})")
 
 
-    def eval(self, query):
-        """ Evaluate the query against the KB. Requires converting to Prolog goals (if even possible) """
-        if self.kb is None:
-            raise Exception("No Knowledge Base yet!")
-        goal = self.convert_query(query)
-        ans = self.kb.query(goal, catcherrors=False)
-        return (tuple(ans) != ())
+    def _swi_eval(self, prolog_query):
+        """ Use SLDNF-resolution to prove query from KB
+            Empty tuple return means query cannot be proved """
+        print(f"Posing query {prolog_query}")
+        return (tuple(self._kb.query(prolog_query, catcherrors=False)) != ())
 
-def translate_eq(lhs, rhs):
+    # Specific FOL-invoked eval methods (standard public interface)
+    def eval_query(self, query):
+        """ Evaluate the query against the KB. Requires converting to Prolog goals (if even possible)
+            This is a catch-all method, which must dispatch based on incoming type """
+        if not query.is_sentence():
+            raise Exception("Cannot have free variables in a query yet.")
+        elif not query.uniform_in(TERM["S_0"]):
+            raise Exception("Cannot answer queries about situations other than S_0! Regress first.")
+
+        if isinstance(query, Atom): # Base case for recursion
+            return self.eval_atomic(query)
+        else: # for non-atomic formulas, delegate to their own eval. This is the recursive case
+            return query.eval(self) # will call this same method, but wrt to a buch of other formulas
+
+    def eval_atomic(self, atomic):
+        if isinstance(atomic, EqAtom): # An equality atom, possibly involvling a fluent
+            print(f"Evaluating equality atom {atomic.tex()}")
+            return self.eval_equality(atomic)
+        # elif isinstance(atomic, RelFluent): # Relational fluent atom
+        #     print(f"Evaluating equality atom {atomic.tex()}")
+        #     return self.eval_relational_fluent(atomic)
+        else: # Generic atom
+            print(f"Evaluating regular atom {atomic.tex()}")
+            return self.eval_atom(atomic)
+
+    def eval_atom(self, atom):
+        """ Any FOL atom not covered by EqAtom or RelFluent """
+        return self._swi_eval(translate_atom(atom))
+
+    def eval_equality(self, eq):
+        """ atom is EqAtom """
+        return self._swi_eval(translate_equality(eq.args[0], eq.args[1]))
+
+
+    def eval_forall(self, universal):
+        """ A universally-quantified formula
+            substitute every constant in place of var, make a conjunction, evaluate as usual
+        """
+        pass
+
+    def eval_exists(self, existential):
+        """ An existentially-quantified formula
+            substitute every constant in place of var, make a disjunction, evaluate as usual
+        """
+        print(f"Evaluating existential {existential.tex()}")
+        # Get a new Prolog var, remove existential, insert new var where existential one used to be
+        pass
+
+
+
+
+
+def translate_equality(lhs, rhs):
+    """ This function is shared between init axioms and queries, be careful """
+    print(f"Translating equality {lhs.tex()} = {rhs.tex()}")
+    if lhs.is_atomic() and rhs.is_atomic():
+        return f"{translate_term(lhs)}={translate_term(rhs)}"
+
     outer, inner = "", ""
-    if isinstance(lhs, UConst):
+    if lhs.is_atomic():
         (lhs, rhs) = (rhs, lhs)
-    # now rhs is the constant
-    args = translate_term_args(lhs) + (translate_term(rhs),)
-    return combine_name_args(translate_term_name(lhs), args)
+    # now rhs is atomic
+    args = translate_term_args(lhs) + (translate_term(rhs),) # Magic trick, turns function into predicate
+    result = combine_name_args(translate_term_name(lhs), args)
+    print(f"Result: {result}")
+    return result
 
 def translate_term_name(term):
     prefix = "f_"
@@ -100,6 +144,15 @@ def translate_term_name(term):
 
 def translate_term_args(term): # returns a tuple of args
     return tuple(translate_term(a) for a in term.args if a.sort != "situation")
+
+def translate_atom_args(term, fluent=False): # returns a tuple of args
+
+    # !!!!!
+    # THis is incomplete! What if atom has non-constant arguments???
+    if fluent:
+        return tuple(translate_term(a) for a in term.args[:-1])
+    else:
+        return tuple(translate_term(a) for a in term.args)
 
 def translate_term(term):
     return combine_name_args(translate_term_name(term), translate_term_args(term))
@@ -114,5 +167,5 @@ def translate_atom_name(atom):
 
 def translate_atom(atom):
     name = translate_atom_name(atom)
-    args = translate_term_args(atom) # should work for atoms, too
+    args = translate_atom_args(atom)
     return combine_name_args(name, args)
