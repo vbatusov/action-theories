@@ -48,6 +48,9 @@ class Symbol:
             return True
         return False
 
+    def __hash__(self):
+        return f"Symbol named {self.name} of sort {self.sort} and argument sorts {[str(s) for s in self.sorts]} and is_var={self.is_var}".__hash__()
+
 class Struct:
     """ The syntactic structure underlying
         both Term and Atom. Needed for storing methods
@@ -900,6 +903,16 @@ class Exists(Quantified):
     def tex(self):
         return Quantified.tex(self, "exists")
 
+class Axiom(object):
+    """ An axiom contains a formula, but also has specialized creation mechanisms and ways to maintain its syntactic invariant
+    """
+    def __init__(self):
+        # Every axiom has a formula
+        self.formula = None
+
+    def tex(self):
+        return self.formula.tex()
+
 
 class Theory:
     """ A vocabulary and a set of formulas over that vocabulary.
@@ -915,28 +928,35 @@ class Theory:
         # Let's agree to have just one arity and type per symbol name
         # There is literally no downside to this
         self.sorts = ["reals", "object", None] # Default sorts. None is for predicates
+        self.constants = {} # sort -> [list of symbols of this sort mentioned in the theory so far]
         for s in sorts: # Custom sorts
             self.add_sort(s)
 
-        self.vocabulary = {} # Maps symbol_name to Symbol
+        # For each sort, including custom ones, prepare a bag for constants
+        for s in self.sorts:
+            self.constants[s] = []
+
+
+        #self.vocabulary = {} # Maps symbol_name to Symbol
         #self.vocabulary["="] = Symbol("=", sort="situation")
         # add arithmetics here?
-        self.vocabulary["+"] = Symbol("+", sort="reals", sorts=["reals", "reals"], infix=True)
-        self.vocabulary["-"] = Symbol("-", sort="reals", sorts=["reals", "reals"], infix=True)
-        self.vocabulary["*"] = Symbol("*", sort="reals", sorts=["reals", "reals"], infix=True)
-        self.vocabulary["/"] = Symbol("/", sort="reals", sorts=["reals", "reals"], infix=True)
-        self.vocabulary["^"] = Symbol("^", sort="reals", sorts=["reals", "reals"], infix=True)
+        # self.vocabulary["+"] = Symbol("+", sort="reals", sorts=["reals", "reals"], infix=True)
+        # self.vocabulary["-"] = Symbol("-", sort="reals", sorts=["reals", "reals"], infix=True)
+        # self.vocabulary["*"] = Symbol("*", sort="reals", sorts=["reals", "reals"], infix=True)
+        # self.vocabulary["/"] = Symbol("/", sort="reals", sorts=["reals", "reals"], infix=True)
+        # self.vocabulary["^"] = Symbol("^", sort="reals", sorts=["reals", "reals"], infix=True)
 
         self.axioms = {"default" : set()} # Sets of Formula objects (no free variables)
         # It's a dict because we want to allow one to categorize axioms into subsets.
         for subset in subsets:
             self.axioms[subset] = set()
-        self.occurs = {} # A map from vocabulary to sentences with occurrences
+        #self.occurs = {} # A map from vocabulary to sentences with occurrences
 
     def add_sort(self, new_sort):
         if new_sort in self.sorts:
             raise TypeError("Cannot add sort '{}'".format(new_sort))
         self.sorts.append(new_sort)
+        self.constants[new_sort] = []
 
     def add_symbol(self, symbol):
         # Check if sorts are legal
@@ -953,27 +973,28 @@ class Theory:
         # Add only if legit
         self.vocabulary[symbol.name] = symbol
 
-    def add_axiom(self, formula, force=False, where="default"): # force means force-add unknown symbols to vocab.
+    def add_axiom(self, axiom, force=False, where="default"): # force means force-add unknown symbols to vocab.
         """ Formula must be a sentence over the vocabulary """
         # Check if every symbol used in the formula
         # (including quantified variables, because they may not occur
         # anywhere as arguments) is in theory's vocabulary
-        if not formula.is_sentence():
-            raise Exception("An open formula cannot be an axiom!")
-            # Future: automatically quantify free vars with \forall
+        if not isinstance(axiom, Axiom):
+            raise Exception(f"Object {axiom.tex()} ({axiom.__class__}) is not an axiom, cannot add!")
 
-        if formula in self.axioms[where]:
+        if axiom in self.axioms[where]:
             raise Exception("Axiom already a part of theory!")
 
-        for s in formula.symbols():
-            if s not in self.vocabulary.values():
-                if not force:
-                    raise Exception("Symbol {} is not in {}'s vocabulary!".format(s.name, self.name))
-                else:
-                    print("Warning: forcing new symbol {} into vocabulary".format(s.name))
-                    self.add_symbol(s)
+        for s in axiom.formula.symbols():
+            # if s not in self.vocabulary.values():
+            #     if not force:
+            #         raise Exception("Symbol {} is not in {}'s vocabulary!".format(s.name, self.name))
+            #     else:
+            #         print("Warning: forcing new symbol {} into vocabulary".format(s.name))
+            #         self.add_symbol(s)
+            if not s.is_var and len(s.sorts) == 0 and not s.sort is None:
+                self.constants[s.sort].append(s)
 
-        self.axioms[where].add(formula)
+        self.axioms[where].add(axiom)
 
 
     def print_vocabulary(self):

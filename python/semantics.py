@@ -16,6 +16,7 @@ class Semantics(object):
         print("Please verify the resulting clauses against the initial theory!")
         print("This semantics is experimental and incomplete!")
         print("REMEMBER: Domain Closure and Negation as Failure are in effect!\n")
+        self._bat = bat # for reference
         self._translation = [] # Just a _translation table from TeX to Prolog for display purposes
         self._kb = self._create_kb(bat)
         print(tabulate(self._translation, headers=["Supplied axiom", "Generated prolog clause"]))
@@ -115,8 +116,27 @@ class Semantics(object):
         """
         print(f"Evaluating existential {existential.tex()}")
         # Get a new Prolog var, remove existential, insert new var where existential one used to be
-        pass
 
+        # As a shortcut, seeing as keeping track of variables is difficult, let's use known constants
+        # This is a temporary solution and might not be a good one
+        # We'll see
+        print(f"Sort of var: {existential.var.sort}")
+        # Get all constants of the right sort
+        fol_constants = set(c for c in self._bat.constants[existential.var.sort])
+        print(f"Original names: {[c.name for c in fol_constants]}")
+        #swi_constants = [f"c_{c}" for c in fol_constants]
+        #print(f"Prolog names: {swi_constants}")
+        for const in fol_constants:
+            term = Term(const)
+            new_e = copy.deepcopy(existential.formula)
+            new_e.replace_term(existential.var, term)
+            print(f"  Will try {new_e.tex()}")
+            if self.eval_query(new_e):
+                print(f"   -> Yes!!!")
+                return True
+            else:
+                print(f"   -> Sorry...")
+        return False
 
 
 

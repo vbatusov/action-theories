@@ -153,16 +153,6 @@ class ObjFluent(FuncFluent):
 #         self.type = "functional fluent"
 
 
-class Axiom(object):
-    """ An axiom contains a formula, but also has specialized creation mechanisms and ways to maintain its syntactic invariant
-    """
-    def __init__(self):
-        # Every axiom has a formula
-        self.formula = None
-
-    def tex(self):
-        return self.formula.tex()
-
 
 class InitAxiom(Axiom):
     """ Any FOL sentence uniform in S_0 """
@@ -485,6 +475,7 @@ class BasicActionTheory(Theory):
         Theory.__init__(self, name, sorts=["action", "situation"], subsets=["S_0", "rss", "fss", "ap"]) # una and \Sigma are standard
         self.actions = [] # keeps track of all action symbols included in the theory
 
+
     def prime_ffluent(self, w):
         """ Returns a prime functional fluent mentioned in w (if any)
             REMINDER: This is not fully implemented. There currently is no actual
@@ -587,15 +578,16 @@ class BasicActionTheory(Theory):
 
         return True # If reached this point, all checks are passed
 
-    def add_axiom(self, formula, force=False, where="default"):
-        raise Exception("Don't do this. Use specialized methods.")
+    #def add_axiom(self, formula, force=False, where="default"):
+    #    raise Exception("Don't do this. Use specialized methods.")
 
     def add_init_axiom(self, axiom, force=False):
         # check if it's a sentence uniform in S_0
         # need formula.terms() generator to get all situations to test
         if not isinstance(axiom, InitAxiom):
             raise Exception("Not a proper init axiom, cannot add to theory")
-        self.axioms["S_0"].add(axiom)
+        self.add_axiom(axiom, force=True, where="S_0")
+        #self.axioms["S_0"].add(axiom)
 
     def add_ap_axiom(self, axiom, force=False):
         """
@@ -606,15 +598,18 @@ class BasicActionTheory(Theory):
         elif axiom.action in self.actions:
             raise Exception(f"There already is an action precondition axiom for action {axiom.action}")
         else:
-            self.axioms["ap"].add(axiom)
+            #self.axioms["ap"].add(axiom)
+            self.add_axiom(axiom, force=True, where="ap")
             self.actions.append(axiom.action)
 
 
     def add_ss_axiom(self, formula, force=False):
         if isinstance(formula, RelSSA):
-            self.axioms["rss"].add(formula)
+            #self.axioms["rss"].add(formula)
+            self.add_axiom(formula, force=True, where="rss")
         elif isinstance(formula, FuncSSA):
-            self.axioms["fss"].add(formula)
+            #self.axioms["fss"].add(formula)
+            self.add_axiom(formula, force=True, where="fss")
         else:
             raise Exception("Not a proper SSA, cannot add to theory")
 
@@ -675,9 +670,9 @@ class BasicActionTheory(Theory):
         print()
         print(col + "*"*20 + f" Theory {self.name} " + "*"*20 + Style.RESET_ALL)
         print(f"{b} Sorts:", self.sorts)
-        print(f"{b} Vocabulary:")
-        for _, s in self.vocabulary.items():
-            print(f"{b}   {s}")
+        print(f"{b} Known constants:")
+        for sort, symbols in self.constants.items():
+            print(f"{b}   {sort} :  {set([s.name for s in symbols])}")
         print(f"{b} Actions:")
         for a in self.actions:
             print(f"{b}   {a}")
