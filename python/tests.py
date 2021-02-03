@@ -451,47 +451,60 @@ class FormulaBuilding(unittest.TestCase):
 
         bw.bat.describe()
         sem = semantics.Semantics(bw.bat)
-        #query = RelFluent("clear", UConst("D"), TERM["S_0"])
+
         q = []
-        #q.append(EqAtom(UConst("A"), UConst("B")))
-        #q.append(EqAtom(ObjFluent("on", bw.A, TERM["S_0"]), UConst("B")))
-        #q.append(EqAtom(UConst("B"), ObjFluent("on", bw.A, TERM["S_0"])))
         q.append(EqAtom(ObjFluent("on", bw.B, TERM["S_0"]), ObjFluent("on", bw.A, TERM["S_0"])))
 
         query = And(*q)
 
-        print("\nFirst query (should be True)")
-
-        # Standard procedure for computing entailment!!!
-        # Regress to S_0
-        f1 = bw.bat.rho(query, TERM["S_0"])
-        # Suppress situations
-        f2 = bw.bat.suppress_s(f1)
-        # Flatten with a new var source
-        f3 = f2.flatten(VarSource())
-        # Now, ready for evaluation
-        answer = sem.eval_query(f3)
+        print("\nFirst query (should be True): 'A and B are on the same thing'")
+        answer = bw.bat.entails(query, sem)
         self.assertTrue(answer)
+        print(f"{query.tex()} evaluates to {answer}")
 
-        print(f"{query.tex()} transformed to {f3.tex()} evaluates to {answer}")
-
-        print("\nSecond query (should be False)")
+        print("\nSecond query (should be False): 'All blocks (which do not denote the table) are on the table'")
         # all blocks (which are not the table) are on table
         x = ObjVar("x")
         query = Forall(x, Implies(Neg(EqAtom(x, bw.T)), EqAtom(ObjFluent("on", x, TERM["S_0"]), bw.T)))
-        f2 = bw.bat.suppress_s(query)
-        f3 = f2.flatten(VarSource())
-        answer = sem.eval_query(f3)
-        print(f"{query.tex()} transformed to {f3.tex()} evaluates to {answer}")
+        # f2 = bw.bat.suppress_s(query)
+        # f3 = f2.flatten(VarSource())
+        answer = bw.bat.entails(query, sem) #sem.eval_query(f3)
+        print(f"{query.tex()} evaluates to {answer}")
         self.assertFalse(answer)
 
-        print("\nThird query (should be True)")
+        print("\nThird query (should be True): 'All blocks (which do not denote the table) except C are on the table'")
         # all blocks (which are not the table) except C are on table
         query = Forall(x, Implies(Neg(EqAtom(x, bw.T)), Or(EqAtom(x, bw.C), EqAtom(ObjFluent("on", x, TERM["S_0"]), bw.T))))
-        f2 = bw.bat.suppress_s(query)
-        f3 = f2.flatten(VarSource())
-        answer = sem.eval_query(f3)
-        print(f"{query.tex()} transformed to {f3.tex()} evaluates to {answer}")
+        # f2 = bw.bat.suppress_s(query)
+        # f3 = f2.flatten(VarSource())
+        answer = bw.bat.entails(query, sem) #sem.eval_query(f3)
+        print(f"{query.tex()} evaluates to {answer}")
+        self.assertTrue(answer)
+
+        # Every block which has something on it is not clear
+        # Reminder: on(x) = y iff x is on y
+        # \forall x (exists z(on(z,s)=x) \to neg clear(x, s))
+        print("\nFourth query (should be True): 'Every block which has something on it is not clear'")
+        x = ObjVar('x')
+        z = ObjVar('z')
+        s = TERM['S_0']
+        query = Forall(x, Implies(Exists(z, EqAtom(ObjFluent("on", z, s), x)), Neg(RelFluent("clear", x, s))))
+        # f2 = bw.bat.suppress_s(query)
+        # f3 = f2.flatten(VarSource())
+        answer = bw.bat.entails(query, sem) #sem.eval_query(f3)
+        print(f"{query.tex()} evaluates to {answer}")
+        self.assertTrue(answer)
+
+        print("\nFifth query (should be True): 'For any block x, it is clear iff there is no block on it'")
+        # \forall x (clear(x, s) \liff \neg exists z(on(z,s)=x))
+        x = ObjVar('x')
+        z = ObjVar('z')
+        s = TERM['S_0']
+        query = Forall(x, Iff(RelFluent("clear", x, s), Neg(Exists(z, EqAtom(ObjFluent("on", z, s), x)))))
+        # f2 = bw.bat.suppress_s(query)
+        # f3 = f2.flatten(VarSource())
+        answer = bw.bat.entails(query, sem) # sem.eval_query(f3)
+        print(f"{query.tex()} evaluates to {answer}")
         self.assertTrue(answer)
 
 

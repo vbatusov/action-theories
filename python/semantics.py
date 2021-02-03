@@ -67,7 +67,7 @@ class Semantics(object):
     def _swi_eval(self, prolog_query):
         """ Use SLDNF-resolution to prove query from KB
             Empty tuple return means query cannot be proved """
-        print(f"Posing query {prolog_query}")
+        #print(f"Posing query {prolog_query}")
         return (tuple(self._kb.query(prolog_query, catcherrors=False)) != ())
 
     # Specific FOL-invoked eval methods (standard public interface)
@@ -86,13 +86,13 @@ class Semantics(object):
 
     def eval_atomic(self, atomic):
         if isinstance(atomic, EqAtom): # An equality atom, possibly involvling a fluent
-            print(f"Evaluating equality atom {atomic.tex()}")
+            #print(f"Evaluating equality atom {atomic.tex()}")
             return self.eval_equality(atomic)
         # elif isinstance(atomic, RelFluent): # Relational fluent atom
         #     print(f"Evaluating equality atom {atomic.tex()}")
         #     return self.eval_relational_fluent(atomic)
         else: # Generic atom
-            print(f"Evaluating regular atom {atomic.tex()}")
+            #print(f"Evaluating regular atom {atomic.tex()}")
             return self.eval_atom(atomic)
 
     def eval_atom(self, atom):
@@ -108,28 +108,28 @@ class Semantics(object):
         """ A universally-quantified formula
             substitute every constant in place of var, make a conjunction, evaluate as usual
         """
-        print(f"Evaluating universal {universal.tex()}")
+        #print(f"Evaluating universal {universal.tex()}")
         # Get a new Prolog var, remove universal, insert new var where existential one used to be
 
         # As a shortcut, seeing as keeping track of variables is difficult, let's use known constants
         # This is a temporary solution and might not be a good one
         # We'll see
-        print(f"Sort of var: {universal.var.sort}")
+        #print(f"Sort of var: {universal.var.sort}")
         # Get all constants of the right sort
         fol_constants = set(c for c in self._bat.constants[universal.var.sort])
-        print(f"Original names: {[c.name for c in fol_constants]}")
-        #swi_constants = [f"c_{c}" for c in fol_constants]
+        #print(f"Original names: {[c.name for c in fol_constants]}")
+        #swi_constants = [f"c_{c.name}" for c in fol_constants]
         #print(f"Prolog names: {swi_constants}")
         for const in fol_constants:
             term = Term(const)
             new_e = copy.deepcopy(universal.formula)
             new_e.replace_term(universal.var, term)
-            print(f"  Will now try {new_e.tex()}")
+            #print(f"  Will now try {new_e.tex()}")
             if not self.eval_query(new_e):
-                print(f"   -> Counterexample")
+                #print(f"   -> Counterexample: {new_e.tex()}")
                 return False
             else:
-                print(f"   -> Works, next...")
+                pass; #print(f"   -> Works, next...")
         return True
 
 
@@ -137,36 +137,34 @@ class Semantics(object):
         """ An existentially-quantified formula
             substitute every constant in place of var, make a disjunction, evaluate as usual
         """
-        print(f"Evaluating existential {existential.tex()}")
+        #print(f"Evaluating existential {existential.tex()}")
         # Get a new Prolog var, remove existential, insert new var where existential one used to be
 
         # As a shortcut, seeing as keeping track of variables is difficult, let's use known constants
         # This is a temporary solution and might not be a good one
         # We'll see
-        print(f"Sort of var: {existential.var.sort}")
+        #print(f"Sort of var: {existential.var.sort}")
         # Get all constants of the right sort
         fol_constants = set(c for c in self._bat.constants[existential.var.sort])
-        print(f"Original names: {[c.name for c in fol_constants]}")
+        #print(f"Original names: {[c.name for c in fol_constants]}")
         #swi_constants = [f"c_{c}" for c in fol_constants]
         #print(f"Prolog names: {swi_constants}")
         for const in fol_constants:
             term = Term(const)
             new_e = copy.deepcopy(existential.formula)
             new_e.replace_term(existential.var, term)
-            print(f"  Will try {new_e.tex()}")
+            #print(f"  Will try {new_e.tex()}")
             if self.eval_query(new_e):
-                print(f"   -> Yes!!!")
+                #print(f"   -> Yes!!!")
                 return True
             else:
-                print(f"   -> Sorry...")
+                pass #print(f"   -> Sorry...")
         return False
-
-
 
 
 def translate_equality(lhs, rhs):
     """ This function is shared between init axioms and queries, be careful """
-    print(f"Translating equality {lhs.tex()} = {rhs.tex()}")
+    #print(f"Translating equality {lhs.tex()} = {rhs.tex()}")
     if lhs.is_atomic() and rhs.is_atomic():
         return f"{translate_term(lhs)}={translate_term(rhs)}"
 
@@ -176,7 +174,7 @@ def translate_equality(lhs, rhs):
     # now rhs is atomic
     args = translate_term_args(lhs) + (translate_term(rhs),) # Magic trick, turns function into predicate
     result = combine_name_args(translate_term_name(lhs), args)
-    print(f"Result: {result}")
+    #print(f"Result: {result}")
     return result
 
 def translate_term_name(term):

@@ -41,6 +41,7 @@ noop = ActionTerm("noop")
 bat.add_ap_axiom(APA(noop))
 
 # Create and add initial state axioms
+# Meaning: on(x) = y iff x is on y
 init1 = InitAxiom(EqAtom(ObjFluent("on", A, S_0), T).close())
 init2 = InitAxiom(EqAtom(ObjFluent("on", C, S_0), B).close())
 init3 = InitAxiom(EqAtom(ObjFluent("on", B, S_0), T).close())
@@ -69,9 +70,9 @@ bat.add_ss_axiom(ssa_on)
 
 
 
-
-# Semantics
 # At this point, will be able to implement actual cause analysis
+
+
 # Extend to hybrid case, with both FO and SO SEA
 # Test on a toy domain with numerical functions (Lotka-Volterra Zayats-Volk)
 # Implement regression for Hybrid

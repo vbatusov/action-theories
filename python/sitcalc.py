@@ -536,6 +536,22 @@ class BasicActionTheory(Theory):
     def instantiate_fssa_rhs(self, fluent_term, y):
         return self.get_fssa_by_term(fluent_term).instantiate_rhs(fluent_term, y)
 
+    def entails(self, query, semantics):
+        """ Returns whether BAT entails query.
+            For success, query must be regressable to S_0 and provable from the initial theory
+        """
+        if not self.is_regressable_to(query, TERM["S_0"]):
+            raise Exception(f"Query {query.tex()} is not regressable to S_0, can't evaluate entailment.")
+
+        regressed = self.rho(query, TERM["S_0"])
+        # Suppress situations
+        suppressed = self.suppress_s(regressed)
+        # Flatten with a new var source
+        flattened = suppressed.flatten(VarSource())
+        # Now, ready for evaluation
+        return semantics.eval_query(flattened)
+
+
     def suppress_s(self, formula): # Perhaps not the best place for this, but I can't think of the best.
         sup = copy.deepcopy(formula)
 
