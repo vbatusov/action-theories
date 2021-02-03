@@ -108,7 +108,30 @@ class Semantics(object):
         """ A universally-quantified formula
             substitute every constant in place of var, make a conjunction, evaluate as usual
         """
-        pass
+        print(f"Evaluating universal {universal.tex()}")
+        # Get a new Prolog var, remove universal, insert new var where existential one used to be
+
+        # As a shortcut, seeing as keeping track of variables is difficult, let's use known constants
+        # This is a temporary solution and might not be a good one
+        # We'll see
+        print(f"Sort of var: {universal.var.sort}")
+        # Get all constants of the right sort
+        fol_constants = set(c for c in self._bat.constants[universal.var.sort])
+        print(f"Original names: {[c.name for c in fol_constants]}")
+        #swi_constants = [f"c_{c}" for c in fol_constants]
+        #print(f"Prolog names: {swi_constants}")
+        for const in fol_constants:
+            term = Term(const)
+            new_e = copy.deepcopy(universal.formula)
+            new_e.replace_term(universal.var, term)
+            print(f"  Will now try {new_e.tex()}")
+            if not self.eval_query(new_e):
+                print(f"   -> Counterexample")
+                return False
+            else:
+                print(f"   -> Works, next...")
+        return True
+
 
     def eval_exists(self, existential):
         """ An existentially-quantified formula

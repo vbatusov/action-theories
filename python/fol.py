@@ -510,7 +510,7 @@ class Neg(Formula): # negation
 
     def eval(self, semantics):
         """ TODO: atoms not covered by EqAtom and RelFluents """
-        return not(semantics.eval_query(self))
+        return not(semantics.eval_query(self.formula))
 
     def flatten(self, varsrc):
         return Neg(self.formula.flatten(varsrc))
@@ -720,7 +720,7 @@ class Implies(Junction):
     def tex(self):
         tex1 = "({})".format(self.formulas[0].tex()) if isinstance(self.formulas[0], Junction) else self.formulas[0].tex()
         tex2 = "({})".format(self.formulas[1].tex()) if isinstance(self.formulas[0], Junction) else self.formulas[1].tex()
-        return "{} \\to {}".join(tex1, tex2)
+        return f"{tex1} \\to {tex2}"
 
 class Iff(Junction):
     def __init__(self, *formulas):
@@ -754,7 +754,7 @@ class Iff(Junction):
     def tex(self):
         tex1 = "({})".format(self.formulas[0].tex()) if isinstance(self.formulas[0], Junction) else self.formulas[0].tex()
         tex2 = "({})".format(self.formulas[1].tex()) if isinstance(self.formulas[0], Junction) else self.formulas[1].tex()
-        return "{} \\liff {}".format(tex1, tex2)
+        return f"{tex1} \\liff {tex2}"
 
 class Quantified(Formula):
     """ <quantifier> var (formula) """

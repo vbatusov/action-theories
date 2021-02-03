@@ -460,6 +460,8 @@ class FormulaBuilding(unittest.TestCase):
 
         query = And(*q)
 
+        print("\nFirst query (should be True)")
+
         # Standard procedure for computing entailment!!!
         # Regress to S_0
         f1 = bw.bat.rho(query, TERM["S_0"])
@@ -469,9 +471,28 @@ class FormulaBuilding(unittest.TestCase):
         f3 = f2.flatten(VarSource())
         # Now, ready for evaluation
         answer = sem.eval_query(f3)
+        self.assertTrue(answer)
 
         print(f"{query.tex()} transformed to {f3.tex()} evaluates to {answer}")
 
+        print("\nSecond query (should be False)")
+        # all blocks (which are not the table) are on table
+        x = ObjVar("x")
+        query = Forall(x, Implies(Neg(EqAtom(x, bw.T)), EqAtom(ObjFluent("on", x, TERM["S_0"]), bw.T)))
+        f2 = bw.bat.suppress_s(query)
+        f3 = f2.flatten(VarSource())
+        answer = sem.eval_query(f3)
+        print(f"{query.tex()} transformed to {f3.tex()} evaluates to {answer}")
+        self.assertFalse(answer)
+
+        print("\nThird query (should be True)")
+        # all blocks (which are not the table) except C are on table
+        query = Forall(x, Implies(Neg(EqAtom(x, bw.T)), Or(EqAtom(x, bw.C), EqAtom(ObjFluent("on", x, TERM["S_0"]), bw.T))))
+        f2 = bw.bat.suppress_s(query)
+        f3 = f2.flatten(VarSource())
+        answer = sem.eval_query(f3)
+        print(f"{query.tex()} transformed to {f3.tex()} evaluates to {answer}")
+        self.assertTrue(answer)
 
 
     def test_formula_transformations(self):
