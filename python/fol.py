@@ -1,6 +1,8 @@
 import copy
 from colorama import Fore, Back, Style
-import random
+
+
+# import random
 
 class Symbol:
     """ A symbol is always a part of a theory.
@@ -9,16 +11,17 @@ class Symbol:
         is_var - flags a variable symbol (Note: SOL allows function variables)
         unique_name - a flag to indicate that symbol is to be treated like a standard name (i.e., there is an implicit unique name axiom for it over its sort. This needs some further thinking. Let's say only constants and action functions can have unique names.)
     """
-    def __init__(self, name, sorts=[], sort=None, infix=False, is_var=False, unique_name=False):
+
+    def __init__(self, name, sorts=(), sort=None, infix=False, is_var=False, unique_name=False):
         # If no return sort, assume it's a predicate
         # Let the parent theory check for legal sorts
         if sort is None:
             self.type = "predicate"
         else:
-            if is_var: # No predicate variables, don't care
+            if is_var:  # No predicate variables, don't care
                 self.type = "variable"
             else:
-                self.type = "function" # includes constants
+                self.type = "function"  # includes constants
 
         if sort is None and is_var:
             raise Exception("A variable must have a sort")
@@ -51,6 +54,7 @@ class Symbol:
     def __hash__(self):
         return f"Symbol named {self.name} of sort {self.sort} and argument sorts {[str(s) for s in self.sorts]} and is_var={self.is_var}".__hash__()
 
+
 class Struct:
     """ The syntactic structure underlying
         both Term and Atom. Needed for storing methods
@@ -65,13 +69,15 @@ class Struct:
         Does not contain:
             - Any semantic notions, i.e., whether variable or not
     """
+
     def __init__(self, symbol, *args):  # args are Structs
         if len(args) != symbol.arity:
             raise TypeError("Wrong number of arguments - {} instead of {}!".format(len(args), symbol.arity))
 
         for s_sort, arg in zip(symbol.sorts, args):
             if s_sort != arg.sort:
-                raise Exception(f"Wrong argument sort. Expecting {s_sort}, got {arg.sort}! Argument in question is {arg}.")
+                raise Exception(
+                    f"Wrong argument sort. Expecting {s_sort}, got {arg.sort}! Argument in question is {arg}.")
             if not isinstance(arg, Struct):
                 raise TypeError("Struct argument is not a Struct!!")
 
@@ -86,13 +92,13 @@ class Struct:
         if self.symbol == other.symbol:
             # If same symbol, can safely assume arities match
             for arg1, arg2 in zip(self.args, other.args):
-                if arg1 != arg2: # Recursively invoke comparison
+                if arg1 != arg2:  # Recursively invoke comparison
                     return False
             return True
         return False
 
     def is_atomic(self):
-        return (len(self.args) == 0)
+        return len(self.args) == 0
 
     def rename(self, name):
         self.name = name
@@ -107,8 +113,8 @@ class Struct:
         """ OK to put this here, because an atom can't occur as an argument
             so won't be replaced as if it were a term """
         # assume current term is not equal to 'term'
-        #self.args = [new_term if term == arg else arg for arg in self.args]
-        #print(f"STRUCT: replacing {term.tex()} by {new_term.tex()}")
+        # self.args = [new_term if term == arg else arg for arg in self.args]
+        # print(f"STRUCT: replacing {term.tex()} by {new_term.tex()}")
         if not isinstance(term, Term) or not isinstance(new_term, Term):
             raise TypeError(f"One or both terms involved in substitution is not a Term!")
         if term.sort != new_term.sort:
@@ -118,18 +124,19 @@ class Struct:
         for arg in self.args:
             if arg == term:
                 new_args.append(new_term)
-            else: # take care to avoid side effects when modifying arg
+            else:  # take care to avoid side effects when modifying arg
                 new_arg = copy.deepcopy(arg)
                 new_arg.replace_term(term, new_term)
                 new_args.append(new_arg)
         self.args = new_args
 
 
-class Term(Struct): #
+class Term(Struct):  #
     """ A term built using variables and function symbols
         For ease of use, construction should infer sorts from arguments
         Can construct term via args and sort, and infer term's symbol, if necessary
      """
+
     # Term(Symbol, Term, Term, ...)
     def __init__(self, symbol, *args):
         for arg in args:
@@ -171,14 +178,12 @@ class Term(Struct): #
         else:
             pass
 
-        if self.symbol.is_var: # variables are red; override
+        if self.symbol.is_var:  # variables are red; override
             col += Back.WHITE
 
         functor = col + functor + Style.RESET_ALL
 
-
-
-        if self.symbol.infix: # binary, already checked
+        if self.symbol.infix:  # binary, already checked
             return functor.join([arg.tex() for arg in self.args])
         if self.arity == 0:
             return functor
@@ -188,19 +193,24 @@ class Term(Struct): #
         return f"Term {self.tex()}".__hash__()
 
 
-class NumTerm(Term): # numerical term
+class NumTerm(Term):  # numerical term
     """ Arithmetical terms are of sort reals
         They cover numerical constants and all arithmetical constructs over them """
     pass
 
+
 class Formula(object):
     """ Any FOL wff """
+
     def __init__(self):
         pass
         # Nothing here
 
     def __eq__(self, other):
-        return False # Catch-all
+        return False  # Catch-all
+
+    def __str__(self):
+        return self.tex()
 
     def flatten(self, varsrc):
         """ Default case. All formulas that CAN be flattened must implement their own way. """
@@ -222,7 +232,7 @@ class Formula(object):
             r = r_new
         raise Exception(f"Simplified formula not stable after {j} iterations!")
 
-    def free_vars(self): # will this work?
+    def free_vars(self):  # will this work?
         # all vars which are not in nonfree_vars
         yield from set([v for v in self.vars() if v not in self.nonfree_vars()])
         # this works, which is pretty cool, since the methods invoked
@@ -231,7 +241,8 @@ class Formula(object):
     def open(self):
         """ Returns whatever the current formula contains under the leading universal quantifiers """
         if not self.is_sentence():
-            raise Exception("Suppressing quantifiers in an open formula makes no sense. How are you going to distinguish between free variables and the universally quantified ones?")
+            raise Exception(
+                "Suppressing quantifiers in an open formula makes no sense. How are you going to distinguish between free variables and the universally quantified ones?")
         if not isinstance(self, Forall):
             raise Exception("Not a universally-quantified sentence.")
         formula = self
@@ -243,7 +254,7 @@ class Formula(object):
         formula = self
         if self.is_sentence():
             pass
-            #raise Exception("Can't quantify a sentence") -- no need to fail here
+            # raise Exception("Can't quantify a sentence") -- no need to fail here
         else:
             for var in self.free_vars():
                 formula = Forall(var, formula)
@@ -268,7 +279,7 @@ class Formula(object):
         """ Covers the case where substitution is trivial """
         pass
 
-    def apply_substitution(self, old=[], new=[]):
+    def apply_substitution(self, old=(), new=()):
         """ Produce a new formula which is the result of simultaneously replacing every term in 'old' by
             the respective term in 'old'. The whole point of this method is to avoid collisions and
             recursive substitutions.
@@ -280,14 +291,18 @@ class Formula(object):
               - for each such collision, rename the corresponding 'old' member to a ... TODO
 
         """
+        # print(f"Subsitution:")
+        # for o, n in zip(old, new):
+        #     print(f"  {o} -> {n}")
+
         result = copy.deepcopy(self)
 
         if len(old) != len(new) or len(set(old)) != len(old):
             raise Exception("Substitution specified incorrectly")
-        #for v in old:
+        # for v in old:
         #    if not v.is_var:
         #        raise Exception("Substitution's 'from' must be variables")
-        for (o,n) in zip(old, new):
+        for (o, n) in zip(old, new):
             if o.sort != n.sort:
                 raise Exception("Sort mismatch in substitution")
 
@@ -298,16 +313,16 @@ class Formula(object):
         collisions = vars_in_old.intersection(vars_in_new)
         # for each collision,
         for c in collisions:
-        #  - generate a fresh name (not in either terms_in_new or old)
+            #  - generate a fresh name (not in either terms_in_new or old)
             c_new = copy.deepcopy(c)
             i = 1
             while c_new in all_vars:
-                #print("Finding name...")
+                # print("Finding name...")
                 c_new.rename(f"{c.name}_{{i}}")
                 i += 1
-        #  - rename variable in 'result'
+            #  - rename variable in 'result'
             result.replace_term(c, c_new)
-        #  - rename source variable in rule accordingly
+            #  - rename source variable in rule accordingly
             old = [c_new if v == c else v for v in old]
         # apply the substitutions without fear of messing up
         for (src, tgt) in zip(old, new):
@@ -339,12 +354,14 @@ class Formula(object):
         (free, nonfree) = tuple(["none" if x == "" else x for x in (free, nonfree)])
         print("  Free variables: {}, non-free: {}".format(free, nonfree))
 
+
 class Tautology(Formula):
     def tex(self):
         return "\\top"
 
     def eval(self, semantics):
-        return True # Tautology is always true no matter what semantics is used
+        return True  # Tautology is always true no matter what semantics is used
+
 
 class Contradiction(Formula):
     def tex(self):
@@ -353,9 +370,11 @@ class Contradiction(Formula):
     def eval(self, semantics):
         return False
 
+
 class Atom(Formula, Struct):
     """ Atomic formula """
-    def __init__(self, symbol, *args): # args must be Terms
+
+    def __init__(self, symbol, *args):  # args must be Terms
         if symbol.sort is not None:
             raise TypeError("Cannot make an atom out of {}".format(str(symbol)))
         for arg in args:
@@ -373,7 +392,7 @@ class Atom(Formula, Struct):
             By flatten I mean no complex functional terms as arguments of either functions or fluents.
             Needed to convert functions to predicates for Prolog.
         """
-        #print(f"Flattening Atom {self.tex()}")
+        # print(f"Flattening Atom {self.tex()}")
         new_atom = copy.deepcopy(self)
         i = -1
 
@@ -387,19 +406,17 @@ class Atom(Formula, Struct):
             old_term = new_atom.args[i]
             new_atom.args[i] = new_var
             existential = Exists(new_var, And(new_atom, EqAtom(new_var, old_term)))
-            #print(f"Replacing {old_term.tex()} by {new_var.tex()}, creating an existential {existential.tex()}, flattening it recursively.")
+            # print(f"Replacing {old_term.tex()} by {new_var.tex()}, creating an existential {existential.tex()}, flattening it recursively.")
             return existential.flatten(varsrc)
 
         return new_atom
-
 
     def eval(self, semantics):
         """ TODO: atoms not covered by EqAtom and RelFluents """
         return semantics.eval_atom(self)
 
-
-    def nonfree_vars(self): # generator
-        return # It's an atom
+    def nonfree_vars(self):  # generator
+        return  # It's an atom
         yield
 
     def terms(self, sort="any"):
@@ -420,6 +437,7 @@ class Atom(Formula, Struct):
             return "{}({})".format(functor, ", ".join([arg.tex() for arg in self.args]))
         return self.symbol.name
 
+
 class EqAtom(Atom):
     """ Might have to exclude the = symbol from all theories' vocabularies!
         Might have to look over all conditions that depend on isinstance(_, Atom)!
@@ -429,6 +447,7 @@ class EqAtom(Atom):
         Actions have UNA; situations should not be equated at all...
         This class should be theory-agnostic, but it currently isn't
     """
+
     def __init__(self, *args):
         if len(args) != 2:
             raise TypeError(f"Equality must have two arguments, {len(args)} given.")
@@ -437,7 +456,7 @@ class EqAtom(Atom):
         if args[0].sort == "situation":
             raise Exception("Equality between situations is prohibited.")
 
-        symbol = Symbol("=", sorts=[args[0].sort]*2) # Might have to exclude this from theory's vocabulary
+        symbol = Symbol("=", sorts=[args[0].sort] * 2)  # Might have to exclude this from theory's vocabulary
         Atom.__init__(self, symbol, *args)
 
     def eval(self, semantics):
@@ -448,18 +467,19 @@ class EqAtom(Atom):
             End state of an equality atom is
               x = f(y) where all y are atomic
         """
-        #print(f"Flattening equality {self.tex()}")
+        # print(f"Flattening equality {self.tex()}")
         new_eq = copy.deepcopy(self)
 
         # Both sides are atomic, nothing to do
         if new_eq.args[0].is_atomic() and new_eq.args[1].is_atomic():
-            #print(f"Need not flatten {new_eq.tex()}, both sides atomic")
+            # print(f"Need not flatten {new_eq.tex()}, both sides atomic")
             return new_eq
 
         # Both sides are non-atomic, so must break into two equalities
         if not new_eq.args[0].is_atomic() and not new_eq.args[1].is_atomic():
             new_var = varsrc.new("z", new_eq.args[0].sort)
-            return (Exists(new_var, And(EqAtom(new_eq.args[0], new_var), EqAtom(new_var, new_eq.args[1])))).flatten(varsrc)
+            return (Exists(new_var, And(EqAtom(new_eq.args[0], new_var), EqAtom(new_var, new_eq.args[1])))).flatten(
+                varsrc)
 
         # Finally, check if one side's aguments must be flattened
         # First, decide which side is non-atomic
@@ -467,7 +487,7 @@ class EqAtom(Atom):
         if new_eq.args[i].is_atomic():
             i = 1
 
-        #print(f"  Part {new_eq.args[i]} is non-atomic")
+        # print(f"  Part {new_eq.args[i]} is non-atomic")
         # args[i] is non-atomic
         # Go over ITS arguments and eliminate them just like with the Atom case
         k = -1  # number of self.args[i].args member to be eliminated
@@ -476,14 +496,14 @@ class EqAtom(Atom):
                 k = j
                 break
 
-        if k >= 0: # found a term argument to eliminate
-            #print(f"    Argument {new_eq.args[i].args[k]} must be flattened out!")
+        if k >= 0:  # found a term argument to eliminate
+            # print(f"    Argument {new_eq.args[i].args[k]} must be flattened out!")
             new_var = varsrc.new("z", new_eq.args[i].args[k].sort)
             old_term = new_eq.args[i].args[k]
             new_eq.args[i].args[k] = new_var
             return (Exists(new_var, And(new_eq, EqAtom(new_var, old_term)))).flatten(varsrc)
         else:
-            #print(f"    Side has no arguments to worry about!")
+            # print(f"    Side has no arguments to worry about!")
             return new_eq
 
     def simplified(self):
@@ -499,7 +519,8 @@ class EqAtom(Atom):
     def tex(self):
         return f"{self.args[0].tex()} \\eq {self.args[1].tex()}"
 
-class Neg(Formula): # negation
+
+class Neg(Formula):  # negation
     def __init__(self, formula):
         Formula.__init__(self)
         # No constraints. Any formula can be negated.
@@ -510,7 +531,7 @@ class Neg(Formula): # negation
 
     def eval(self, semantics):
         """ TODO: atoms not covered by EqAtom and RelFluents """
-        return not(semantics.eval_query(self.formula))
+        return not (semantics.eval_query(self.formula))
 
     def flatten(self, varsrc):
         return Neg(self.formula.flatten(varsrc))
@@ -525,13 +546,15 @@ class Neg(Formula): # negation
         elif isinstance(f_under_neg, Neg):
             return f_under_neg.formula
         else:
-            return Neg(f_under_neg)
+            new = Neg(f_under_neg)
+            #print(Back.GREEN + f"CREATING {new.tex()}: f_under_neg is {f_under_neg.__class__}" + Style.RESET_ALL)
+            return new
 
-    def vars(self, sort="any"): # generator
+    def vars(self, sort="any"):  # generator
         # All variables in an atom are free
         yield from self.formula.vars(sort=sort)
 
-    def nonfree_vars(self): # generator
+    def nonfree_vars(self):  # generator
         yield from self.formula.nonfree_vars()
 
     def symbols(self):
@@ -544,7 +567,7 @@ class Neg(Formula): # negation
         yield from self.formula.atoms()
 
     def replace_term(self, term, new_term):
-        #print(f"Negation: replacing {term.tex()} by {new_term.tex()}")
+        # print(f"Negation: replacing {term.tex()} by {new_term.tex()}")
         self.formula.replace_term(term, new_term)
 
     def tex(self):
@@ -553,16 +576,17 @@ class Neg(Formula): # negation
         else:
             return "\\neg {}".format(self.formula.tex())
 
+
 class Junction(Formula):
-    def __init__(self, *formulas): # a list of formulas in junction
+    def __init__(self, *formulas):  # a list of formulas in junction
         Formula.__init__(self)
         self.formulas = list(formulas)
 
-    def vars(self, sort="any"): # generator
+    def vars(self, sort="any"):  # generator
         for f in self.formulas:
             yield from f.vars(sort=sort)
 
-    def nonfree_vars(self): # generator
+    def nonfree_vars(self):  # generator
         for f in self.formulas:
             yield from f.nonfree_vars()
 
@@ -599,7 +623,7 @@ class And(Junction):
 
     def eval(self, semantics):
         for f in self.formulas:
-            if not semantics.eval_query(f): # If any of the conjuncts is false, the whole thing is
+            if not semantics.eval_query(f):  # If any of the conjuncts is false, the whole thing is
                 return False
         return True
 
@@ -612,17 +636,17 @@ class And(Junction):
         """ Returns a shallow syntactic simplification of self """
         # Empty conjunctions are now ruled out in constructor.
         # In the beginning, god gathered all conjuncts under one roof.
-        s_conjuncts = [] # self.formulas except for those which are themselves conjunctions, get those instead
+        s_conjuncts = []  # self.formulas except for those which are themselves conjunctions, get those instead
 
-        def unique_append(formula, list):
+        def unique_append(formula, alist):
             """ Adds a non-trivial conjunct to a list, ignores trivial """
-            if formula not in list and not isinstance(formula, Tautology):
-                list.append(formula)
+            if formula not in alist and not isinstance(formula, Tautology):
+                alist.append(formula)
 
         for f in self.formulas:
-            f_s = f.simplified() # if f is conjunction, then f_s is a flat conjunction
-            if isinstance(f_s, And): # if f was unary, then f_s is either non-unary or not a conjunction
-                for f2 in f_s.formulas: # f2 is an already-simplified nested conjunct
+            f_s = f.simplified()  # if f is conjunction, then f_s is a flat conjunction
+            if isinstance(f_s, And):  # if f was unary, then f_s is either non-unary or not a conjunction
+                for f2 in f_s.formulas:  # f2 is an already-simplified nested conjunct
                     unique_append(f2, s_conjuncts)
             else:
                 unique_append(f_s, s_conjuncts)
@@ -631,7 +655,9 @@ class And(Junction):
             if isinstance(f, Contradiction):
                 return f
 
-        if len(s_conjuncts) == 1: # may still end up with a single conjunct!
+        if len(s_conjuncts) == 0: # No disjuncts: Contradiction
+            return Tautology()
+        elif len(s_conjuncts) == 1:  # may still end up with a single conjunct!
             return s_conjuncts[0]
 
         return And(*s_conjuncts)
@@ -639,6 +665,7 @@ class And(Junction):
     def tex(self):
         texes = [f"({f.tex()})" if isinstance(f, Or) else f.tex() for f in self.formulas]
         return " \\land ".join(texes)
+
 
 class Or(Junction):
     def __init__(self, *formulas):
@@ -650,10 +677,9 @@ class Or(Junction):
     def flatten(self, varsrc):
         return Or(*[f.flatten(varsrc) for f in self.formulas])
 
-
     def eval(self, semantics):
         for f in self.formulas:
-            if semantics.eval_query(f): # If any of the disjuncts is true, the whole thing is
+            if semantics.eval_query(f):  # If any of the disjuncts is true, the whole thing is
                 return True
         return False
 
@@ -662,24 +688,26 @@ class Or(Junction):
 
         s_disjuncts = []
 
-        def unique_append(formula, list):
+        def unique_append(formula, alist):
             """ Adds a non-trivial disjunct to a list, ignores trivial """
-            if formula not in list and not isinstance(formula, Contradiction):
-                list.append(formula)
+            if formula not in alist and not isinstance(formula, Contradiction):
+                alist.append(formula)
 
         for f in self.formulas:
-            f_s = f.simplified() # if f is disjunction, then f_s is a flat disjunction
-            if isinstance(f_s, Or): # if f was unary, then f_s is either non-unary or not a disjunction
-                for f2 in f_s.formulas: # f2 is an already-simplified nested conjunct
+            f_s = f.simplified()  # if f is disjunction, then f_s is a flat disjunction
+            if isinstance(f_s, Or):  # if f was unary, then f_s is either non-unary or not a disjunction
+                for f2 in f_s.formulas:  # f2 is an already-simplified nested conjunct
                     unique_append(f2, s_disjuncts)
             else:
                 unique_append(f_s, s_disjuncts)
-
+        #print("s_disjuncts: " + ", ".join([str(d.tex()) for d in s_disjuncts]) + f" (while simplifying {self.tex()})")
         for f in s_disjuncts:
             if isinstance(f, Tautology):
                 return f
 
-        if len(s_disjuncts) == 1: # may still end up with a single conjunct!
+        if len(s_disjuncts) == 0: # No disjuncts: Contradiction
+            return Contradiction()
+        elif len(s_disjuncts) == 1:  # may still end up with a single disjunct!
             return s_disjuncts[0]
 
         return Or(*s_disjuncts)
@@ -687,6 +715,7 @@ class Or(Junction):
     def tex(self):
         texes = [f"({f.tex()})" if isinstance(f, And) else f.tex() for f in self.formulas]
         return " \\lor ".join(texes)
+
 
 class Implies(Junction):
     def __init__(self, *formulas):
@@ -698,8 +727,9 @@ class Implies(Junction):
         return Implies(*[f.flatten(varsrc) for f in self.formulas])
 
     def eval(self, semantics):
-        if semantics.eval_query(self.formulas[0]) and not semantics.eval_query(self.formulas[1]): # If any of the disjuncts is true, the whole thing is
-                return False
+        if semantics.eval_query(self.formulas[0]) and not semantics.eval_query(
+                self.formulas[1]):  # If any of the disjuncts is true, the whole thing is
+            return False
         return True
 
     def simplified(self):
@@ -718,9 +748,12 @@ class Implies(Junction):
             return Implies(premise, conclusion)
 
     def tex(self):
-        tex1 = "({})".format(self.formulas[0].tex()) if isinstance(self.formulas[0], Junction) else self.formulas[0].tex()
-        tex2 = "({})".format(self.formulas[1].tex()) if isinstance(self.formulas[0], Junction) else self.formulas[1].tex()
+        tex1 = "({})".format(self.formulas[0].tex()) if isinstance(self.formulas[0], Junction) else self.formulas[
+            0].tex()
+        tex2 = "({})".format(self.formulas[1].tex()) if isinstance(self.formulas[0], Junction) else self.formulas[
+            1].tex()
         return f"{tex1} \\to {tex2}"
+
 
 class Iff(Junction):
     def __init__(self, *formulas):
@@ -733,7 +766,7 @@ class Iff(Junction):
 
     def eval(self, semantics):
         if semantics.eval_query(self.formulas[0]) != semantics.eval_query(self.formulas[1]):
-                return False
+            return False
         return True
 
     def simplified(self):
@@ -752,12 +785,16 @@ class Iff(Junction):
             return Iff(left, right)
 
     def tex(self):
-        tex1 = "({})".format(self.formulas[0].tex()) if isinstance(self.formulas[0], Junction) else self.formulas[0].tex()
-        tex2 = "({})".format(self.formulas[1].tex()) if isinstance(self.formulas[0], Junction) else self.formulas[1].tex()
+        tex1 = "({})".format(self.formulas[0].tex()) if isinstance(self.formulas[0], Junction) else self.formulas[
+            0].tex()
+        tex2 = "({})".format(self.formulas[1].tex()) if isinstance(self.formulas[0], Junction) else self.formulas[
+            1].tex()
         return f"{tex1} \\liff {tex2}"
+
 
 class Quantified(Formula):
     """ <quantifier> var (formula) """
+
     def __init__(self, var, formula):
         Formula.__init__(self)
         # var should be a Variable
@@ -776,10 +813,10 @@ class Quantified(Formula):
     def __eq__(self, other):
         return self.__class__ == other.__class__ and ((self.var, self.formula) == (other.var, other.formula))
 
-    def vars(self, sort="any"): # generator
+    def vars(self, sort="any"):  # generator
         yield from self.formula.vars(sort=sort)
 
-    def nonfree_vars(self): # generator
+    def nonfree_vars(self):  # generator
         yield self.var
         yield from self.formula.nonfree_vars()
 
@@ -802,8 +839,10 @@ class Quantified(Formula):
             template = "\\{} {} ({})"
         return template.format(quantifier, self.var.tex(), self.formula.tex())
 
+
 class Forall(Quantified):
     """ \\forall var (formula) """
+
     def __init__(self, var, formula):
         Quantified.__init__(self, var, formula)
 
@@ -831,8 +870,10 @@ class Forall(Quantified):
     def tex(self):
         return Quantified.tex(self, "forall")
 
+
 class Exists(Quantified):
     """ \\exists var (formula) """
+
     def __init__(self, var, formula):
         Quantified.__init__(self, var, formula)
 
@@ -842,7 +883,7 @@ class Exists(Quantified):
     def flatten(self, varsrc):
         new_var = copy.deepcopy(self.var)
         new_f = self.formula.flatten(varsrc)
-        #print(f"Flattening {self.tex()}: new var {new_var.tex()}, new sub {new_f.tex()}")
+        # print(f"Flattening {self.tex()}: new var {new_var.tex()}, new sub {new_f.tex()}")
         return Exists(new_var, new_f)
 
     def simplified(self):
@@ -862,31 +903,32 @@ class Exists(Quantified):
                     f_inscope.append(f)
                 else:
                     f_outscope.append(f)
-            if len(f_inscope) == 0: # nothing in scope, remove quantifier
+            if len(f_inscope) == 0:  # nothing in scope, remove quantifier
                 return f_simplified
-            elif len(f_outscope) > 0: # some inscope, some out
+            elif len(f_outscope) > 0:  # some inscope, some out
                 juncts = f_outscope + [Exists(copy.deepcopy(self.var), f_simplified.__class__(*f_inscope))]
                 return f_simplified.__class__(*juncts).simplified()
-            else: # all in scope
-                #print(f"All in scope for {self.tex()}")
-                if isinstance(f_simplified, And) and len(f_simplified.formulas) > 1: # if a non-unary conjunction
-                    #print("  Non-unary conjunction")
-                    term = None # Term to replace self.var in rest
-                    rest = [] # Rest of conjuncts, to be preserved after replacing self.var by rest
+            else:  # all in scope
+                # print(f"All in scope for {self.tex()}")
+                if isinstance(f_simplified, And) and len(f_simplified.formulas) > 1:  # if a non-unary conjunction
+                    # print("  Non-unary conjunction")
+                    term = None  # Term to replace self.var in rest
+                    rest = []  # Rest of conjuncts, to be preserved after replacing self.var by rest
                     found_elim = False
                     for conj in f_simplified.formulas:
-                        if isinstance(conj, EqAtom) and self.var in conj.args and not found_elim: # and if there is an equality atom about self.var
-                            #print(f"    There is an equality atom about self.var")
+                        if isinstance(conj,
+                                      EqAtom) and self.var in conj.args and not found_elim:  # and if there is an equality atom about self.var
+                            # print(f"    There is an equality atom about self.var")
                             term = conj.args[0]
                             if term == self.var:
                                 term = conj.args[1]  # Get the term on the other side of the equality
-                            #print(f"      term becomes {term.tex()}")
+                            # print(f"      term becomes {term.tex()}")
                             found_elim = True
-                        else: # not an equality conjunct, store it
+                        else:  # not an equality conjunct, store it
                             rest.append(conj)
-                    #print(f"    Ended up with term={term} and rest={rest}")
+                    # print(f"    Ended up with term={term} and rest={rest}")
                     if not term is None and len(rest) > 0:
-                        #print(f"    About to replace {self.var.tex()} by {term.tex()}")
+                        # print(f"    About to replace {self.var.tex()} by {term.tex()}")
                         # Get rid of the equality and substitute term for self.var in the rest
                         for r in rest:
                             r.replace_term(self.var, term)
@@ -903,9 +945,11 @@ class Exists(Quantified):
     def tex(self):
         return Quantified.tex(self, "exists")
 
+
 class Axiom(object):
     """ An axiom contains a formula, but also has specialized creation mechanisms and ways to maintain its syntactic invariant
     """
+
     def __init__(self):
         # Every axiom has a formula
         self.formula = None
@@ -923,22 +967,22 @@ class Theory:
 
         Generic class, so allows arbitrary sorts
     """
-    def __init__(self, name, sorts=[], subsets=[]):
+
+    def __init__(self, name, sorts=(), subsets=()):
         self.name = name
         # Let's agree to have just one arity and type per symbol name
         # There is literally no downside to this
-        self.sorts = ["reals", "object", None] # Default sorts. None is for predicates
-        self.constants = {} # sort -> [list of symbols of this sort mentioned in the theory so far]
-        for s in sorts: # Custom sorts
+        self.sorts = ["reals", "object", None]  # Default sorts. None is for predicates
+        self.constants = {}  # sort -> [list of symbols of this sort mentioned in the theory so far]
+        for s in sorts:  # Custom sorts
             self.add_sort(s)
 
         # For each sort, including custom ones, prepare a bag for constants
         for s in self.sorts:
             self.constants[s] = []
 
-
-        #self.vocabulary = {} # Maps symbol_name to Symbol
-        #self.vocabulary["="] = Symbol("=", sort="situation")
+        # self.vocabulary = {} # Maps symbol_name to Symbol
+        # self.vocabulary["="] = Symbol("=", sort="situation")
         # add arithmetics here?
         # self.vocabulary["+"] = Symbol("+", sort="reals", sorts=["reals", "reals"], infix=True)
         # self.vocabulary["-"] = Symbol("-", sort="reals", sorts=["reals", "reals"], infix=True)
@@ -946,11 +990,11 @@ class Theory:
         # self.vocabulary["/"] = Symbol("/", sort="reals", sorts=["reals", "reals"], infix=True)
         # self.vocabulary["^"] = Symbol("^", sort="reals", sorts=["reals", "reals"], infix=True)
 
-        self.axioms = {"default" : set()} # Sets of Formula objects (no free variables)
+        self.axioms = {"default": set()}  # Sets of Formula objects (no free variables)
         # It's a dict because we want to allow one to categorize axioms into subsets.
         for subset in subsets:
             self.axioms[subset] = set()
-        #self.occurs = {} # A map from vocabulary to sentences with occurrences
+        # self.occurs = {} # A map from vocabulary to sentences with occurrences
 
     def add_sort(self, new_sort):
         if new_sort in self.sorts:
@@ -973,7 +1017,7 @@ class Theory:
         # Add only if legit
         self.vocabulary[symbol.name] = symbol
 
-    def add_axiom(self, axiom, force=False, where="default"): # force means force-add unknown symbols to vocab.
+    def add_axiom(self, axiom, force=False, where="default"):  # force means force-add unknown symbols to vocab.
         """ Formula must be a sentence over the vocabulary """
         # Check if every symbol used in the formula
         # (including quantified variables, because they may not occur
@@ -996,6 +1040,9 @@ class Theory:
 
         self.axioms[where].add(axiom)
 
+    def add_semantics(self, semantics):
+        print(f"Adding semantics to theory {self.name}. This assumes all axioms are already in.")
+        self.semantics = semantics
 
     def print_vocabulary(self):
         print("Vocabulary of theory '{}':".format(self.name))
@@ -1003,13 +1050,13 @@ class Theory:
             print("  \t{}".format(str(s)))
 
 
-
 class VarSource(object):
     """ A source of fresh variables of whatever sort;
         useful when accessed from multiple namespaces """
+
     def __init__(self):
-        self.sorts = {} # basename -> sort (only one sort per basename)
-        self.counts = {} # basename -> count
+        self.sorts = {}  # basename -> sort (only one sort per basename)
+        self.counts = {}  # basename -> count
 
     def new(self, basename="z", sort="object"):
         if basename not in self.sorts:

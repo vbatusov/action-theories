@@ -1,5 +1,6 @@
 from sitcalc import *
 from fol import *
+import semantics
 #from pudb import set_trace; set_trace()
 
 # Create common symbols and terms
@@ -58,7 +59,7 @@ bat.add_init_axiom(init6)
 
 # Construct and add SSA for clear (relational)
 ssa_clear = RelSSA(RelFluent("clear", x, s))
-ssa_clear.add_pos_effect(move_y_z, context=EqAtom(y, ObjFluent("on", x, s)))
+ssa_clear.add_pos_effect(move_y_z, context=EqAtom(x, ObjFluent("on", y, s)))
 ssa_clear.add_neg_effect(move_y_x)
 bat.add_ss_axiom(ssa_clear)
 
@@ -68,6 +69,8 @@ ssa_on.add_effect(move_x_y)
 bat.add_ss_axiom(ssa_on)
 
 
+# Add semantics; always the last thing to do
+bat.add_semantics(semantics.Semantics(bat))
 
 
 # At this point, will be able to implement actual cause analysis

@@ -1,5 +1,6 @@
 from sitcalc import *
 from fol import *
+import semantics
 #from pudb import set_trace; set_trace() # Debugger
 
 # Create common symbols and terms
@@ -38,3 +39,8 @@ S_0 = TERM["S_0"]
 # ssa = FuncSSA( ... )
 # ssa.add_effect( ... )
 # bat.add_ss_axiom(ssa)
+
+
+# Add semantics; always the last thing to do
+# -------------------------------
+bat.add_semantics(semantics.Semantics(bat))

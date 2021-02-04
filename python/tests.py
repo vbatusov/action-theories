@@ -450,7 +450,6 @@ class FormulaBuilding(unittest.TestCase):
         import semantics
 
         bw.bat.describe()
-        sem = semantics.Semantics(bw.bat)
 
         q = []
         q.append(EqAtom(ObjFluent("on", bw.B, TERM["S_0"]), ObjFluent("on", bw.A, TERM["S_0"])))
@@ -458,7 +457,7 @@ class FormulaBuilding(unittest.TestCase):
         query = And(*q)
 
         print("\nFirst query (should be True): 'A and B are on the same thing'")
-        answer = bw.bat.entails(query, sem)
+        answer = bw.bat.entails(query)
         self.assertTrue(answer)
         print(f"{query.tex()} evaluates to {answer}")
 
@@ -466,18 +465,14 @@ class FormulaBuilding(unittest.TestCase):
         # all blocks (which are not the table) are on table
         x = ObjVar("x")
         query = Forall(x, Implies(Neg(EqAtom(x, bw.T)), EqAtom(ObjFluent("on", x, TERM["S_0"]), bw.T)))
-        # f2 = bw.bat.suppress_s(query)
-        # f3 = f2.flatten(VarSource())
-        answer = bw.bat.entails(query, sem) #sem.eval_query(f3)
+        answer = bw.bat.entails(query)
         print(f"{query.tex()} evaluates to {answer}")
         self.assertFalse(answer)
 
         print("\nThird query (should be True): 'All blocks (which do not denote the table) except C are on the table'")
         # all blocks (which are not the table) except C are on table
         query = Forall(x, Implies(Neg(EqAtom(x, bw.T)), Or(EqAtom(x, bw.C), EqAtom(ObjFluent("on", x, TERM["S_0"]), bw.T))))
-        # f2 = bw.bat.suppress_s(query)
-        # f3 = f2.flatten(VarSource())
-        answer = bw.bat.entails(query, sem) #sem.eval_query(f3)
+        answer = bw.bat.entails(query)
         print(f"{query.tex()} evaluates to {answer}")
         self.assertTrue(answer)
 
@@ -489,9 +484,7 @@ class FormulaBuilding(unittest.TestCase):
         z = ObjVar('z')
         s = TERM['S_0']
         query = Forall(x, Implies(Exists(z, EqAtom(ObjFluent("on", z, s), x)), Neg(RelFluent("clear", x, s))))
-        # f2 = bw.bat.suppress_s(query)
-        # f3 = f2.flatten(VarSource())
-        answer = bw.bat.entails(query, sem) #sem.eval_query(f3)
+        answer = bw.bat.entails(query)
         print(f"{query.tex()} evaluates to {answer}")
         self.assertTrue(answer)
 
@@ -501,9 +494,7 @@ class FormulaBuilding(unittest.TestCase):
         z = ObjVar('z')
         s = TERM['S_0']
         query = Forall(x, Iff(RelFluent("clear", x, s), Neg(Exists(z, EqAtom(ObjFluent("on", z, s), x)))))
-        # f2 = bw.bat.suppress_s(query)
-        # f3 = f2.flatten(VarSource())
-        answer = bw.bat.entails(query, sem) # sem.eval_query(f3)
+        answer = bw.bat.entails(query)
         print(f"{query.tex()} evaluates to {answer}")
         self.assertTrue(answer)
 
@@ -535,6 +526,65 @@ class FormulaBuilding(unittest.TestCase):
 
         # All works, fixed some bugs
 
+
+    def test_causality(self):
+        import blocksworld as bw
+        import causality
+
+        bw.bat.describe()
+        sigma_1 = Do(ActionTerm("move", bw.C, bw.T), bw.S_0)
+        sigma_2 = Do(ActionTerm("noop"), sigma_1)
+        sigma_3 = Do(ActionTerm("move", bw.A, bw.B), sigma_2)
+
+        print(f"{sigma_3}")
+        print("Subsituations forward")
+        for s in sigma_3.subsituations():
+           print(f"  {s}")
+
+        print("Subsituations reverse")
+        for s in sigma_3.subsituations(reverse=True):
+            print(f"  {s}")
+
+        ans = bw.bat.is_executable(sigma_3)
+        print(f"Is {sigma_3.tex()} executable? {ans}")
+        self.assertTrue(ans)
+
+        sigma_4 = Do(ActionTerm("move", bw.A, bw.A), sigma_2)
+        ans = bw.bat.is_executable(sigma_4)
+        print(f"Is {sigma_4.tex()} executable? {ans}")
+        self.assertFalse(ans)
+
+        print("\nNow for Causal Analysis")
+
+        sigma = Do(ActionTerm("move", bw.A, bw.B), sigma_2)
+        # Query: on(A,s) = B
+        cs = causality.CausalSetting(bw.bat, sigma, EqAtom(bw.B, ObjFluent("on", bw.A, TERM["s"])))
+        cause = cs.find_cause()
+        print(f"$AC({cs})$ is ${cause[0].tex()}$ with precursor ${cause[1]}$")
+
+        cs = causality.CausalSetting(bw.bat, sigma, EqAtom(bw.T, ObjFluent("on", bw.C, TERM["s"])))
+        cause = cs.find_cause()
+        print(f"$AC({cs})$ is ${cause[0].tex()}$ with precursor ${cause[1]}$")
+
+        cs = causality.CausalSetting(bw.bat, sigma, EqAtom(bw.T, ObjFluent("on", bw.A, TERM["s"])))
+        cause = cs.find_cause()
+        if cause is None:
+            print(f"$AC({cs})$ is unachieved")
+        else:
+            print(f"$AC({cs})$ is ${cause[0]}$ with precursor ${cause[1]}$")
+
+        print("\nAchievement Causal Chain")
+        sigma = Do(ActionTerm("move", bw.A, bw.B), sigma_2)
+        # Query: on(A,s) = B
+        cs = causality.CausalSetting(bw.bat, sigma, EqAtom(bw.B, ObjFluent("on", bw.A, TERM["s"])))
+        print(f"Analyzing {cs}")
+        while cs is not None:
+            cause, prec = cs.find_cause()
+            if cause is None:
+                break
+            print(f"  * Found cause {cause}")
+            print(f"    with precursor {prec}")
+            cs = prec
 
 
 if __name__ == '__main__':
