@@ -35,9 +35,32 @@ class Semantics(object):
 
     def _create_kb(self, bat):
         kb = pyswip.Prolog()
+        self._register_predicates(bat, kb)
+
         for axiom in bat.axioms["S_0"]:
             self._add_axiom(bat, axiom, kb)
         return kb
+
+    def _register_predicates(self, bat, kb):
+        """ For every non-equality atom in BAT, obtain name and arity, and register with SWI as a dynamic predicate,
+            otherwise it will complain if no positive facts about it are asserted """
+        # This misses functional fluents:
+        # for _, subset in bat.axioms.items():
+        #     for axiom in subset:
+        #         for atom in axiom.formula.atoms():
+        #             if atom.name != "Poss" and atom.name != "=":
+        #                 tr = translate_atom(atom)
+        #                 print(f"atom {atom} becomes {tr}")
+        # So instead let's just register all fluents:
+        for f in bat.fluents:
+            if f.sort is None:
+                tr = f"p_{f.name}/{len(f.sorts)-1}"
+                print(f"relational f. {f} becomes {tr}")
+                kb.dynamic(tr)
+            else:
+                tr = f"f_{f.name}/{len(f.sorts)}" # Sit arg removed, but one is added, so len=len
+                print(f"functional f. {f} becomes {tr}")
+                kb.dynamic(tr)
 
     def _add_axiom(self, bat, axiom, kb):
         formula = bat.suppress_s(axiom.formula)

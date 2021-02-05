@@ -64,4 +64,11 @@ class CausalSetting(object):
 
 def find_all_causes(cs):
     """ Returns all causes, in reverse chronological order, of the causal setting cs """
-    pass
+    print(f"\nCausal analysis of {cs}")
+    while cs is not None:
+        cause, prec = cs.find_cause()
+        if cause is None:
+            break
+        print(f"  * Found cause {cause}")
+        print(f"    with precursor {prec}")
+        cs = prec

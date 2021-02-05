@@ -123,6 +123,14 @@ class Do(SitTerm):
     def __init__(self, action_term, sit_term):
         SitTerm.__init__(self, SYM["do"], action_term, sit_term)
 
+def build_sitterm(*actions, root=None):
+    """ Build a complex situation term from supplied actions, rooted in root. """
+    if root is None: # workaround due to module loading
+        root = TERM["S_0"]
+    sigma = root
+    for a in actions:
+        sigma = Do(a, sigma)
+    return sigma
 
 class PossAtom(Atom):
     """ Poss atoms are special, all reuse the same symbol and have arg number and sorts.
@@ -285,6 +293,8 @@ class RelSSA(SSA):
         if not isinstance(fluent, RelFluent):
             raise Exception("A relational SSA must be about a relational fluent")
 
+        self.fluent_symbol = fluent.symbol
+
         self.a_var = TERM['a']
         self.s_var = TERM['s']
         # Create universally quantified variables
@@ -392,6 +402,7 @@ class FuncSSA(SSA):
         if not isinstance(fluent, FuncFluent):
             raise Exception("A functional SSA must be about a functional fluent")
 
+        self.fluent_symbol = fluent.symbol
         # for v in obj_vars:
         #     if v.sort != "object":
         #         raise TypeError("Fluent object arguments must be of sort object")
@@ -543,6 +554,7 @@ class BasicActionTheory(Theory):
         Theory.__init__(self, name, sorts=["action", "situation"],
                         subsets=["S_0", "rss", "fss", "ap"])  # una and \Sigma are standard
         self.actions = []  # keeps track of all action symbols included in the theory
+        self.fluents = []
 
     def prime_ffluent(self, w):
         """ Returns a prime functional fluent mentioned in w (if any)
@@ -714,6 +726,11 @@ class BasicActionTheory(Theory):
             self.actions.append(axiom.action)
 
     def add_ss_axiom(self, formula, force=False):
+        if formula.fluent_symbol in self.fluents:
+            raise Exception(f"There already is an SSA for {formula.fluent_symbol}!")
+        else:
+            self.fluents.append(formula.fluent_symbol)
+
         if isinstance(formula, RelSSA):
             # self.axioms["rss"].add(formula)
             self.add_axiom(formula, force=True, where="rss")
@@ -785,6 +802,9 @@ class BasicActionTheory(Theory):
             print(f"{b}   {sort} :  {set([s.name for s in symbols])}")
         print(f"{b} Actions:")
         for a in self.actions:
+            print(f"{b}   {a}")
+        print(f"{b} Fluents:")
+        for a in self.fluents:
             print(f"{b}   {a}")
         print(f"{b} Axioms:")
         for ss, st in self.axioms.items():

@@ -970,6 +970,7 @@ class Theory:
 
     def __init__(self, name, sorts=(), subsets=()):
         self.name = name
+        self.semantics = None
         # Let's agree to have just one arity and type per symbol name
         # There is literally no downside to this
         self.sorts = ["reals", "object", None]  # Default sorts. None is for predicates

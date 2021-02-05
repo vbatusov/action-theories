@@ -586,6 +586,8 @@ class FormulaBuilding(unittest.TestCase):
             print(f"    with precursor {prec}")
             cs = prec
 
+    def test_flipflop(self):
+        import flipflop
 
 if __name__ == '__main__':
     unittest.main()
